@@ -16,21 +16,16 @@ This is **bring-your-own-cloud (BYOC) self-hosting**: the engine and all scanned
 data live in *your* tenant, on *your* account — nothing leaves. It is the
 local-first story scaled from one laptop to one shared box you control.
 
-> ⚠️ **Status: pre-release — pending an image publish.** Both prerequisites are
-> now implemented in `securevector-ai-threat-monitor` (tracked in
-> [story #182](https://github.com/Secure-Vector/llm-security-engine/issues/182)),
-> awaiting merge + the first ghcr publish:
-> 1. **Engine container image** — `Dockerfile` (headless `server` extras,
->    binds `0.0.0.0:$PORT`, enroll-then-serve, data at the mount path) +
->    multi-arch ghcr publish workflow. Not yet pushed, so
->    `var.image` has no image to pull until the first release.
-> 2. **Inbound auth** — `ingress_auth` middleware: when `ingress_token` is set
->    the engine requires `Authorization: Bearer` / `X-Api-Key` (fail-open when
->    unset). Header-capable clients (OpenClaw, curl) work today; SDK / JS-hook
->    client-side forwarding is still rolling out.
+> ✅ **Status: live.** The engine image is published and **public** —
+> `ghcr.io/secure-vector/securevector-ai-threat-monitor` (tags `latest` and
+> `4.7.1`), multi-arch (amd64/arm64). `var.image` pulls it with no extra setup.
 >
-> The Terraform is validated against the real app interface and deploys a working
-> engine the moment that image is published.
+> One caveat: the current image runs **device-level (Option 1) detection**;
+> engine-side **inbound auth** (`ingress_token` → `SECUREVECTOR_INGRESS_TOKEN`)
+> is not yet enforced and ships in a later release. Until then, gate
+> internet-facing deployments at the **network layer**
+> (`allow_unauthenticated = false`, `ingress_cidrs`, or cloud IAM) rather than
+> relying on `ingress_token` alone.
 
 [![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.svg)](https://ssh.cloud.google.com/cloudshell/editor?cloudshell_git_repo=https://github.com/Secure-Vector/terraform-google-securevector&cloudshell_working_dir=examples/free-tier)
 
@@ -63,7 +58,7 @@ There are two ways to run it. **Option 1** is the standalone self-host engine;
 | | **Option 1 — Device-level engine** (default) | **Option 2 — + Fleet & advanced cloud ML** |
 |---|---|---|
 | What you get | Your own engine doing **local, device-level** detection — local rules + the **Guardian ML** model — running entirely in your tenant. | Everything in Option 1, **plus** the SecureVector cloud: org **fleet** management, **policy sync**, and the cloud's **advanced ML / enhanced `/analyze`**. |
-| Needs | Just a GCP project. No SecureVector account. | A SecureVector `svet_*` enrollment token (and/or `svpk_*` key); the cloud tiers/billing apply. |
+| Needs | Just a GCP project. No SecureVector account. | **Requires a SecureVector account (sign up).** An `svet_*` enrollment token (and/or `svpk_*` key); cloud tiers/billing apply. |
 | Set | nothing extra | `cloud_connect_token` (svet\_) and/or `securevector_api_key` (svpk\_) |
 
 #### Option 1 — Device-level engine (default, one command)
@@ -82,6 +77,12 @@ terraform destroy                   # clean teardown, no leftover billing
 > `ingress_token` (app-layer auth) and/or `allow_unauthenticated = false` (IAM).
 
 #### Option 2 — Add fleet management + advanced cloud ML
+
+> **Requires a SecureVector account — sign up first.** Option 2 connects the
+> engine to the SecureVector cloud, so you must create an account and obtain a
+> token: an `svet_*` enrollment token (→ fleet + policy sync) and/or an `svpk_*`
+> key (→ personal cloud mode). Sign up at [app.securevector.io/signup](https://app.securevector.io/signup).
+> Cloud tiers / billing apply. **Option 1 needs none of this.**
 
 Same engine, now bridged to the SecureVector cloud: set `cloud_connect_token`
 (an `svet_*` org token → **fleet view + policy sync**) and/or
