@@ -91,6 +91,17 @@ Same engine, now bridged to the SecureVector cloud: set `cloud_connect_token`
 Add `ingress_token` to authenticate inbound clients. See
 [Tokens](#tokens--which-credential-enables-what).
 
+**Fleet use case — one pane of glass across many containers.** Running more than
+one engine — replicas of a service, several agent apps, or containers spread
+across regions and clusters? Give every container the **same**
+`cloud_connect_token` (`svet_*`). Each node enrolls into your org and streams its
+**security findings** (threats, blocked tool calls, secret/data-leak hits) and
+**observability** (agent runs, tool-permission decisions) up to the SecureVector
+cloud — so the **entire fleet shows up in a single span / fleet view** instead of
+N isolated per-container dashboards. One place to watch security posture *and*
+agent behavior across the whole fleet, with org-wide policy pushed back down to
+every node via policy sync.
+
 ```hcl
 module "securevector" {
   source  = "Secure-Vector/securevector/google"
@@ -170,7 +181,7 @@ family** and is the part that works today:
 When the module sets `ingress_token`, the engine **requires** a credential
 (`Authorization: Bearer` / `X-Api-Key`). A client forwards it via
 `SECUREVECTOR_API_KEY` — **OpenClaw (and any header-capable client like curl)
-works today**; SDK / JS-hook client-side forwarding is rolling out (#182), so for
+works today**; SDK / JS-hook client-side forwarding is rolling out, so for
 those leave `ingress_token` unset or use Cloud Run IAM. (Plugin list mirrors
 `securevector-ai-threat-monitor/src/securevector/plugins/`.)
 
@@ -181,7 +192,7 @@ the inbound story:
 
 | Capability | Direction | Credential | Notes |
 |---|---|---|---|
-| **Remote analyze** (client → engine) | inbound | `ingress_token` → `SECUREVECTOR_INGRESS_TOKEN` | Engine requires `Authorization: Bearer`/`X-Api-Key` when set (fail-open when unset). Header-capable clients (OpenClaw, curl) work today; SDK/JS-hook forwarding rolling out (#182). Or use Cloud Run IAM. |
+| **Remote analyze** (client → engine) | inbound | `ingress_token` → `SECUREVECTOR_INGRESS_TOKEN` | Engine requires `Authorization: Bearer`/`X-Api-Key` when set (fail-open when unset). Header-capable clients (OpenClaw, curl) work today; SDK/JS-hook forwarding rolling out. Or use Cloud Run IAM. |
 | **Personal cloud mode** (enhanced detection) | outbound | `securevector_api_key` (`svpk_`/legacy) → `SECUREVECTOR_API_KEY` | Engine presents it to the cloud as `X-Api-Key` (`cloud_sync.py`). No policy sync. |
 | **Forward to fleet** (org visibility) | outbound | `cloud_connect_token` (`svet_*`) → `SECUREVECTOR_ENROLL_TOKEN` | Org enrollment. Needs the image entrypoint to run `securevector-app enroll`. |
 | **Sync policies to local** (signed bundles) | outbound→in | `cloud_connect_token` (`svet_*` **only**) | `svpk_`/legacy/none ⇒ Policy Sync OFF — no partial mode (`device_admin.py`). |

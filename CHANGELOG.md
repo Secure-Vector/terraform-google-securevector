@@ -48,7 +48,7 @@ release per `vX.Y.Z` git tag.
   every request (`/health` stays open), validated by the new `ingress_auth`
   middleware in securevector-ai-threat-monitor (fail-open when unset). Pairs
   with or replaces Cloud Run IAM. Header-capable clients (OpenClaw, curl) can
-  authenticate today; SDK/JS-hook client-side forwarding is rolling out (#182).
+  authenticate today; SDK/JS-hook client-side forwarding is rolling out.
 
 ### Changed (DevOps review — aligned to the real app interface)
 - Container env now uses only vars the app actually reads (verified against
@@ -68,8 +68,9 @@ release per `vX.Y.Z` git tag.
   today — Cloud Run IAM only) and a token→capability matrix.
 
 ### Notes
-- Hard prerequisites (story #182): a published engine container image (no app
-  Dockerfile / ghcr CI exists yet) whose entrypoint binds `0.0.0.0:$PORT`,
-  stores data at the mount path, and enrolls from `SECUREVECTOR_ENROLL_TOKEN`;
-  plus engine-side inbound auth. The Terraform is correct against the real app
-  interface and will deploy a working engine once that image ships.
+- The engine image is published to ghcr
+  (`ghcr.io/secure-vector/securevector-ai-threat-monitor`, tags `latest` + `4.7.1`,
+  multi-arch): its entrypoint binds `0.0.0.0:$PORT`, stores data at the mount
+  path, and enrolls from `SECUREVECTOR_ENROLL_TOKEN`. Engine-side inbound-auth
+  enforcement ships in a later release; until then gate internet-facing
+  deployments at the network layer.
