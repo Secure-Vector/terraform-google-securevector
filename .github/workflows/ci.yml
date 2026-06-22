@@ -42,8 +42,11 @@ jobs:
       - name: No hardcoded secrets / tokens in source
         run: |
           echo "Scanning for accidentally committed secrets..."
-          if grep -rIn --exclude-dir=.git --exclude=*.md \
-             -E "\b(svet_|svpk_|AIza|-----BEGIN [A-Z ]*PRIVATE KEY)" .; then
+          # Patterns require real token-like material AFTER the prefix, so that
+          # documentation of the prefixes (e.g. "svet_*") and this pattern
+          # itself do not false-positive.
+          if grep -rIn --exclude-dir=.git --exclude-dir=.github --exclude=*.md \
+             -E "(svet_|svpk_)[A-Za-z0-9]{16,}|AIza[0-9A-Za-z_-]{35}|-----BEGIN [A-Z ]*PRIVATE KEY-----" .; then
             echo "Potential secret material found!"
             exit 1
           fi
