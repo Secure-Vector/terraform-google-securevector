@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # NOTE: pin to a commit SHA before going public, to match repo policy.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: terraform fmt (check)
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate (root module)
+        run: terraform validate
+
+      - name: terraform validate (free-tier example)
+        run: |
+          cd examples/free-tier
+          terraform init -backend=false
+          terraform validate
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: No hardcoded secrets / tokens in source
+        run: |
+          echo "Scanning for accidentally committed secrets..."
+          if grep -rIn --exclude-dir=.git --exclude=*.md \
+             -E "\b(svet_|svpk_|AIza|-----BEGIN [A-Z ]*PRIVATE KEY)" .; then
+            echo "Potential secret material found!"
+            exit 1
+          fi
+          echo "Secret scan passed"
