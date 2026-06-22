@@ -8,13 +8,13 @@ leaves nothing behind.
 terraform init
 terraform apply \
   -var="project_id=YOUR_PROJECT" \
-  -var="auth_token=$(openssl rand -hex 24)"
+  -var="securevector_api_key=$(openssl rand -hex 24)"
 
 # grab the wired LangChain snippet:
 terraform output -raw runtime_snippet
 
 # when you're done:
-terraform destroy -var="project_id=YOUR_PROJECT" -var="auth_token=ignored"
+terraform destroy -var="project_id=YOUR_PROJECT" -var="securevector_api_key=ignored"
 ```
 
 > Cost note: with `min_instances = 0` the service costs ~nothing at idle — you

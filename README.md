@@ -50,8 +50,8 @@ module "securevector" {
 
   project_id           = "my-project"
   region               = "us-central1"
-  securevector_runtime = "langchain"             # emits a wired client snippet
-  auth_token           = var.securevector_token  # app-layer bearer gate
+  securevector_runtime = "langchain"               # emits a wired client snippet
+  securevector_api_key = var.securevector_api_key  # API key / minted token clients forward
 }
 
 output "dashboard_url"   { value = module.securevector.dashboard_url }
@@ -75,8 +75,8 @@ scale-to-zero, public URL, clean teardown.
 | `container_port` | number | `8741` | Port the engine listens on. |
 | `cpu` / `memory` | string | `1` / `512Mi` | Per-instance limits. |
 | `min_instances` / `max_instances` | number | `0` / `2` | `0` = scale-to-zero. |
-| `allow_unauthenticated` | bool | `true` | Public run.app URL (gated by `auth_token`). `false` = Google IAM only. |
-| `auth_token` | string (sensitive) | `""` | App-layer bearer token. **Set this when public.** |
+| `allow_unauthenticated` | bool | `true` | Public run.app URL (gated by `securevector_api_key`). `false` = Google IAM only. |
+| `securevector_api_key` | string (sensitive) | `""` | API key / minted token (`svet_`/`svpk_`) the engine requires; clients forward it via `SECUREVECTOR_API_KEY`. **Set this when public.** |
 | `cloud_connect_token` | string (sensitive) | `""` | Optional Cloud Connect enrollment into the managed fleet. |
 | `securevector_runtime` | string | `none` | Client to emit a wiring snippet for. SDKs: `langchain`/`langgraph`/`crewai`. Plugins: `claude-code`/`cursor`/`codex`/`copilot-cli`/`openclaw`. Or `none`. |
 | `enable_persistence` | bool | `true` | Mount a GCS volume at `/data` for the audit hash-chain. |
@@ -101,41 +101,39 @@ scale-to-zero, public URL, clean teardown.
 
 `securevector_runtime` makes the module emit a ready-to-paste wiring snippet
 (`terraform output -raw runtime_snippet`). All SecureVector clients are
-supported; the base-URL env var differs by family:
+supported. The base-URL env var differs by family; **every client forwards the
+same credential** — `SECUREVECTOR_API_KEY` (an API key or minted `svet_`/`svpk_`
+token) sent as `Authorization: Bearer`:
 
-| Client | `securevector_runtime` value | Base-URL env var | Remote bearer auth |
+| Client | `securevector_runtime` value | Base-URL env var | Credential (forwarded) |
 |---|---|---|---|
-| LangChain / LangGraph / CrewAI SDK | `langchain` / `langgraph` / `crewai` | `SECUREVECTOR_SDK_APP_URL` (+ `SECUREVECTOR_SDK_MODE`) | not yet (#182) |
-| Claude Code plugin | `claude-code` | `SV_BASE_URL` (hooks) · `SECUREVECTOR_URL` (statusline) | not yet (#182) |
-| Cursor plugin | `cursor` | `SV_BASE_URL` · `SECUREVECTOR_URL` | not yet (#182) |
-| Codex plugin | `codex` | `SV_BASE_URL` · `SECUREVECTOR_URL` | not yet (#182) |
-| GitHub Copilot CLI plugin | `copilot-cli` | `SV_BASE_URL` · `SECUREVECTOR_URL` | not yet (#182) |
-| OpenClaw guard | `openclaw` | `SECUREVECTOR_URL` (+ `SECUREVECTOR_API_KEY`) | ✅ `Authorization: Bearer` |
+| LangChain / LangGraph / CrewAI SDK | `langchain` / `langgraph` / `crewai` | `SECUREVECTOR_SDK_APP_URL` (+ `SECUREVECTOR_SDK_MODE`) | `SECUREVECTOR_API_KEY` |
+| Claude Code plugin | `claude-code` | `SV_BASE_URL` (hooks) · `SECUREVECTOR_URL` (statusline) | `SECUREVECTOR_API_KEY` |
+| Cursor plugin | `cursor` | `SV_BASE_URL` · `SECUREVECTOR_URL` | `SECUREVECTOR_API_KEY` |
+| Codex plugin | `codex` | `SV_BASE_URL` · `SECUREVECTOR_URL` | `SECUREVECTOR_API_KEY` |
+| GitHub Copilot CLI plugin | `copilot-cli` | `SV_BASE_URL` · `SECUREVECTOR_URL` | `SECUREVECTOR_API_KEY` |
+| OpenClaw guard | `openclaw` | `SECUREVECTOR_URL` | `SECUREVECTOR_API_KEY` |
 
 (Plugin list mirrors `securevector-ai-threat-monitor/src/securevector/plugins/`.)
 
 ## Access & auth
 
-The SecureVector engine is single-user by origin. v1 fronts it with an
-**application-layer bearer token** (`auth_token`). When `allow_unauthenticated =
-true`, Cloud Run serves the URL publicly over managed HTTPS and that token is
-what gates access.
+The SecureVector engine is single-user by origin. The application-layer
+credential is an **API key / minted token** (`securevector_api_key`): a plain
+API key or a minted `svet_*` (org enrollment) / `svpk_*` (personal) token.
+Clients forward it via `SECUREVECTOR_API_KEY` as `Authorization: Bearer` — the
+**bearer token is optional** (it defaults to the api key). When
+`allow_unauthenticated = true`, Cloud Run serves the URL publicly over managed
+HTTPS and that credential is what gates access, so **set `securevector_api_key`
+for any internet-reachable deployment**.
 
-> **Remote-auth caveat (important).** Today **only the OpenClaw plugin forwards a
-> bearer token** to a remote engine (via `SECUREVECTOR_API_KEY` →
-> `Authorization: Bearer`). The three SDKs and the Claude Code / Cursor / Codex /
-> Copilot CLI plugins can target a remote URL but **do not yet send an auth
-> header**. Until first-class remote auth lands ([story #182](https://github.com/Secure-Vector/llm-security-engine/issues/182)),
-> for those clients either:
-> - set `allow_unauthenticated = false` and reach the service over Google IAM
->   (`gcloud run services proxy` / IAP), or
-> - run with `auth_token = ""` on a private/network-restricted deployment.
->
-> Set `auth_token` for an internet-reachable deployment **once the clients you
-> use can authenticate** (OpenClaw can today).
+For stricter setups, set `allow_unauthenticated = false` and reach the service
+over Google IAM (`gcloud run services proxy` / IAP) instead of (or in addition
+to) the app-layer key. Server-side enforcement of the inbound key in the engine
+is tracked in [story #182](https://github.com/Secure-Vector/llm-security-engine/issues/182).
 
-> For production, consider sourcing `auth_token` / `cloud_connect_token` from
-> Secret Manager rather than tfvars (roadmap; see open questions in the wiki).
+> For production, consider sourcing `securevector_api_key` / `cloud_connect_token`
+> from Secret Manager rather than tfvars (roadmap; see open questions in the wiki).
 
 ## Persistence
 

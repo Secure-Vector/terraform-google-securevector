@@ -22,7 +22,7 @@ locals {
       SECUREVECTOR_HOST = "0.0.0.0"
       SECUREVECTOR_PORT = tostring(var.container_port)
     },
-    var.auth_token != "" ? { SECUREVECTOR_AUTH_TOKEN = var.auth_token } : {},
+    var.securevector_api_key != "" ? { SECUREVECTOR_API_KEY = var.securevector_api_key } : {},
     var.cloud_connect_token != "" ? { SECUREVECTOR_CLOUD_CONNECT_TOKEN = var.cloud_connect_token } : {},
     var.enable_persistence ? { SECUREVECTOR_DATA_DIR = "/data" } : {},
     var.extra_env,
@@ -133,7 +133,7 @@ resource "google_cloud_run_v2_service" "default" {
 }
 
 ###############################################################################
-# Public access (gated at the app layer by auth_token)
+# Public access (gated at the app layer by securevector_api_key)
 ###############################################################################
 
 resource "google_cloud_run_v2_service_iam_member" "public" {

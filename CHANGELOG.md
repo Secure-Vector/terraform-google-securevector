@@ -12,16 +12,19 @@ release per `vX.Y.Z` git tag.
   clean `terraform destroy`.
 - Optional GCS-backed persistence volume (`/data`) for the tamper-evident audit
   hash-chain (`enable_persistence`, default on).
-- Application-layer bearer-token gate (`auth_token`) and public-ingress toggle
-  (`allow_unauthenticated`).
+- Application-layer credential (`securevector_api_key`) — an API key or minted
+  `svet_`/`svpk_` token the engine requires and every client forwards via
+  `SECUREVECTOR_API_KEY` (`Authorization: Bearer`, bearer optional) — plus a
+  public-ingress toggle (`allow_unauthenticated`).
 - Optional Cloud Connect bridge (`cloud_connect_token`) to enroll the node into
   the SecureVector managed fleet.
 - `securevector_runtime` variable that emits a copy-paste SDK/plugin wiring
   snippet as a Terraform output, pre-pointed at the new dashboard URL. Covers
   all SecureVector clients: SDKs (langchain / langgraph / crewai) and plugins
   (claude-code / cursor / codex / copilot-cli / openclaw), each with its real
-  env-var contract (`SECUREVECTOR_SDK_APP_URL` for SDKs; `SV_BASE_URL` /
-  `SECUREVECTOR_URL` for plugins; `SECUREVECTOR_API_KEY` bearer for openclaw).
+  base-URL env var (`SECUREVECTOR_SDK_APP_URL` for SDKs; `SV_BASE_URL` /
+  `SECUREVECTOR_URL` for plugins) and the shared credential `SECUREVECTOR_API_KEY`
+  every client forwards.
 - Shared `runtime.tf` holding the supported-client contract, kept byte-identical
   across all `terraform-<cloud>-securevector` repos so every cloud exposes the
   same clients/snippets.

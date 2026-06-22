@@ -11,16 +11,20 @@
 # to every cloud repo so all clouds expose the identical contract.
 #
 # Verified client contract (securevector-ai-threat-monitor):
-#   SDKs (langchain/langgraph/crewai) -> SECUREVECTOR_SDK_APP_URL + SECUREVECTOR_SDK_MODE
-#   JS-hook plugins (claude-code/cursor/codex/copilot-cli)
-#                                     -> SV_BASE_URL (hooks) / SECUREVECTOR_URL (statusline)
-#   openclaw                          -> SECUREVECTOR_URL + SECUREVECTOR_API_KEY (Authorization: Bearer)
+#   Base URL (per family):
+#     SDKs (langchain/langgraph/crewai)             -> SECUREVECTOR_SDK_APP_URL (+ SECUREVECTOR_SDK_MODE)
+#     JS-hook plugins (claude-code/cursor/codex/copilot-cli)
+#                                                   -> SV_BASE_URL (hooks) / SECUREVECTOR_URL (statusline)
+#     openclaw                                      -> SECUREVECTOR_URL
+#   Credential (all clients, same way):
+#     SECUREVECTOR_API_KEY — a minted token (svet_* org enrollment / svpk_*
+#     personal API key) or an API key — forwarded to the engine as
+#     Authorization: Bearer. The bearer token is OPTIONAL (defaults to the api
+#     key; cloud_settings.py). Set var.securevector_api_key to make the engine
+#     require it; leave empty for an unauthenticated/loopback deployment.
 #
-# Auth reality: only openclaw forwards a bearer token to a remote engine today.
-# SDKs and JS-hook plugins can target a remote URL but do NOT yet send an auth
-# header — for a public deployment reach them via the cloud's IAM until remote
-# auth lands (story #182). auth_token is never interpolated here (it is
-# sensitive) — it is referenced by name only.
+#   securevector_api_key is never interpolated into these snippets (it is
+#   sensitive) — it is shown as a <placeholder> only.
 ###############################################################################
 
 variable "securevector_runtime" {
@@ -46,16 +50,20 @@ locals {
       Your SecureVector engine is live at:
         ${local.base_url}
 
-      Point a client at it (env var depends on the client family):
-        SDKs            -> export SECUREVECTOR_SDK_APP_URL=${local.base_url}
-        plugins         -> export SV_BASE_URL=${local.base_url}
-        openclaw        -> export SECUREVECTOR_URL=${local.base_url}  (+ SECUREVECTOR_API_KEY)
+      Point a client at it. Base-URL env var depends on the client family:
+        SDKs     -> export SECUREVECTOR_SDK_APP_URL=${local.base_url}
+        plugins  -> export SV_BASE_URL=${local.base_url}
+        openclaw -> export SECUREVECTOR_URL=${local.base_url}
+
+      All clients forward the engine credential the same way (optional):
+        export SECUREVECTOR_API_KEY=<minted token (svet_/svpk_) or api key>
     EOT
 
     langchain = <<-EOT
       pip install securevector-sdk-langchain
       export SECUREVECTOR_SDK_APP_URL=${local.base_url}
       export SECUREVECTOR_SDK_MODE=enforce
+      export SECUREVECTOR_API_KEY=<minted token / api key>   # forwarded to the engine; optional
 
       # in your agent:
       from securevector_sdk_langchain import secure_middleware
@@ -67,6 +75,7 @@ locals {
       pip install securevector-sdk-langgraph
       export SECUREVECTOR_SDK_APP_URL=${local.base_url}
       export SECUREVECTOR_SDK_MODE=enforce
+      export SECUREVECTOR_API_KEY=<minted token / api key>   # forwarded to the engine; optional
 
       # in your agent:
       from securevector_sdk_langgraph import secure_middleware
@@ -78,6 +87,7 @@ locals {
       pip install securevector-sdk-crewai
       export SECUREVECTOR_SDK_APP_URL=${local.base_url}
       export SECUREVECTOR_SDK_MODE=enforce
+      export SECUREVECTOR_API_KEY=<minted token / api key>   # forwarded to the engine; optional
 
       # wrap your crew's tools before kickoff:
       from securevector_sdk_crewai import secure_tools
@@ -87,40 +97,35 @@ locals {
     claude-code = <<-EOT
       # Install the SecureVector Claude Code plugin, then point its hooks here:
       export SV_BASE_URL=${local.base_url}
-      export SECUREVECTOR_URL=${local.base_url}   # read by the statusline
-      # NOTE: JS-hook plugins don't yet send a bearer token. For a public URL use
-      # cloud IAM (allow_unauthenticated/equivalent = off) until remote auth (#182).
+      export SECUREVECTOR_URL=${local.base_url}              # read by the statusline
+      export SECUREVECTOR_API_KEY=<minted token / api key>   # forwarded as Authorization: Bearer; optional
     EOT
 
     cursor = <<-EOT
       # Install the SecureVector Cursor plugin, then point its hooks here:
       export SV_BASE_URL=${local.base_url}
-      export SECUREVECTOR_URL=${local.base_url}   # read by the statusline
-      # NOTE: JS-hook plugins don't yet send a bearer token. For a public URL use
-      # cloud IAM (allow_unauthenticated/equivalent = off) until remote auth (#182).
+      export SECUREVECTOR_URL=${local.base_url}              # read by the statusline
+      export SECUREVECTOR_API_KEY=<minted token / api key>   # forwarded as Authorization: Bearer; optional
     EOT
 
     codex = <<-EOT
       # Install the SecureVector Codex plugin, then point its hooks here:
       export SV_BASE_URL=${local.base_url}
-      export SECUREVECTOR_URL=${local.base_url}   # read by the statusline
-      # NOTE: JS-hook plugins don't yet send a bearer token. For a public URL use
-      # cloud IAM (allow_unauthenticated/equivalent = off) until remote auth (#182).
+      export SECUREVECTOR_URL=${local.base_url}              # read by the statusline
+      export SECUREVECTOR_API_KEY=<minted token / api key>   # forwarded as Authorization: Bearer; optional
     EOT
 
     copilot-cli = <<-EOT
       # Install the SecureVector GitHub Copilot CLI plugin, then point it here:
       export SV_BASE_URL=${local.base_url}
-      export SECUREVECTOR_URL=${local.base_url}   # read by the statusline
-      # NOTE: JS-hook plugins don't yet send a bearer token. For a public URL use
-      # cloud IAM (allow_unauthenticated/equivalent = off) until remote auth (#182).
+      export SECUREVECTOR_URL=${local.base_url}              # read by the statusline
+      export SECUREVECTOR_API_KEY=<minted token / api key>   # forwarded as Authorization: Bearer; optional
     EOT
 
     openclaw = <<-EOT
       # Point the SecureVector OpenClaw guard here (openclaw.json or env):
       export SECUREVECTOR_URL=${local.base_url}
-      export SECUREVECTOR_API_KEY=<your auth_token>   # sent as Authorization: Bearer
-      # openclaw is the one client that authenticates to a remote engine today.
+      export SECUREVECTOR_API_KEY=<minted token / api key>   # forwarded as Authorization: Bearer; optional
     EOT
   }
 

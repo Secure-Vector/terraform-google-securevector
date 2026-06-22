@@ -87,21 +87,23 @@ variable "service_account_email" {
 ###############################################################################
 # Access & auth
 #
-# The SecureVector engine is single-user by origin. v1 fronts it with an
-# application-layer bearer token (auth_token). When allow_unauthenticated is
-# true, Cloud Run serves the run.app URL publicly over managed HTTPS and the
-# bearer token is what actually gates access — so SET auth_token in any
+# The SecureVector engine is single-user by origin. The application-layer
+# credential is an API key / minted token (securevector_api_key): clients
+# forward it via SECUREVECTOR_API_KEY as Authorization: Bearer (the bearer
+# token is optional, defaulting to the api key). When allow_unauthenticated is
+# true, Cloud Run serves the run.app URL publicly over managed HTTPS and that
+# credential is what gates access — so SET securevector_api_key in any
 # internet-reachable deployment.
 ###############################################################################
 
 variable "allow_unauthenticated" {
-  description = "Grant roles/run.invoker to allUsers so the run.app URL is reachable over the public internet (gated by auth_token at the app layer). Set false to require Google IAM (gcloud proxy / IAP) instead."
+  description = "Grant roles/run.invoker to allUsers so the run.app URL is reachable over the public internet (gated by securevector_api_key at the app layer). Set false to require Google IAM (gcloud proxy / IAP) instead."
   type        = bool
   default     = true
 }
 
-variable "auth_token" {
-  description = "Bearer token the engine requires on inbound requests (application-layer gate). STRONGLY recommended when allow_unauthenticated = true. Clients pass it via the SDK/plugin. Empty = no app-layer gate (rely on Cloud Run IAM only)."
+variable "securevector_api_key" {
+  description = "API key or minted token (svet_* org enrollment / svpk_* personal key) the engine requires on inbound requests. Clients forward it via SECUREVECTOR_API_KEY (Authorization: Bearer). STRONGLY recommended when allow_unauthenticated = true. Empty = no app-layer gate (rely on Cloud Run IAM only)."
   type        = string
   default     = ""
   sensitive   = true

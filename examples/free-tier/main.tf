@@ -9,7 +9,7 @@
 #
 # Usage:
 #   terraform init
-#   terraform apply -var="project_id=YOUR_PROJECT" -var="auth_token=$(openssl rand -hex 24)"
+#   terraform apply -var="project_id=YOUR_PROJECT" -var="securevector_api_key=$(openssl rand -hex 24)"
 #   terraform output -raw runtime_snippet
 #   terraform destroy   # clean teardown, no leftover billing
 ###############################################################################
@@ -28,7 +28,7 @@ variable "project_id" {
   type = string
 }
 
-variable "auth_token" {
+variable "securevector_api_key" {
   type      = string
   sensitive = true
 }
@@ -46,7 +46,7 @@ module "securevector" {
 
   # Cheapest trial posture
   min_instances        = 0
-  auth_token           = var.auth_token
+  securevector_api_key = var.securevector_api_key
   bucket_force_destroy = true
 }
 
