@@ -7,6 +7,10 @@
 ###############################################################################
 
 locals {
+  # Cloud-specific: the deployed engine's HTTPS URL. The shared runtime.tf
+  # consumes this local — every cloud module must define local.base_url.
+  base_url = google_cloud_run_v2_service.default.uri
+
   bucket_name = var.persistence_bucket_name != "" ? var.persistence_bucket_name : "${var.project_id}-${var.name}-data"
 
   # Server-mode contract passed to the engine container. These env names track

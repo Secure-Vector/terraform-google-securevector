@@ -17,8 +17,14 @@ release per `vX.Y.Z` git tag.
 - Optional Cloud Connect bridge (`cloud_connect_token`) to enroll the node into
   the SecureVector managed fleet.
 - `securevector_runtime` variable that emits a copy-paste SDK/plugin wiring
-  snippet (langchain / langgraph / crewai / claude-code / cursor / codex) as a
-  Terraform output, pre-pointed at the new dashboard URL.
+  snippet as a Terraform output, pre-pointed at the new dashboard URL. Covers
+  all SecureVector clients: SDKs (langchain / langgraph / crewai) and plugins
+  (claude-code / cursor / codex / copilot-cli / openclaw), each with its real
+  env-var contract (`SECUREVECTOR_SDK_APP_URL` for SDKs; `SV_BASE_URL` /
+  `SECUREVECTOR_URL` for plugins; `SECUREVECTOR_API_KEY` bearer for openclaw).
+- Shared `runtime.tf` holding the supported-client contract, kept byte-identical
+  across all `terraform-<cloud>-securevector` repos so every cloud exposes the
+  same clients/snippets.
 - Required-API enablement (`run.googleapis.com`, `storage.googleapis.com`).
 
 ### Notes

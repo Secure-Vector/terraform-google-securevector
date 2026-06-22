@@ -120,20 +120,8 @@ variable "cloud_connect_token" {
   sensitive   = true
 }
 
-###############################################################################
-# Runtime snippet — emits the wired SDK/plugin install snippet as an output.
-###############################################################################
-
-variable "securevector_runtime" {
-  description = "Which client to emit a copy-paste wiring snippet for as a Terraform output. One of: none, langchain, langgraph, crewai, claude-code, cursor, codex."
-  type        = string
-  default     = "none"
-
-  validation {
-    condition     = contains(["none", "langchain", "langgraph", "crewai", "claude-code", "cursor", "codex"], var.securevector_runtime)
-    error_message = "securevector_runtime must be one of: none, langchain, langgraph, crewai, claude-code, cursor, codex."
-  }
-}
+# NOTE: variable "securevector_runtime" lives in the shared runtime.tf (kept
+# identical across all terraform-<cloud>-securevector repos).
 
 ###############################################################################
 # Persistence — durable audit hash-chain. v1 = SQLite on a GCS-backed volume.

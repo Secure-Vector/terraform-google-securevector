@@ -78,7 +78,7 @@ scale-to-zero, public URL, clean teardown.
 | `allow_unauthenticated` | bool | `true` | Public run.app URL (gated by `auth_token`). `false` = Google IAM only. |
 | `auth_token` | string (sensitive) | `""` | App-layer bearer token. **Set this when public.** |
 | `cloud_connect_token` | string (sensitive) | `""` | Optional Cloud Connect enrollment into the managed fleet. |
-| `securevector_runtime` | string | `none` | Client to emit a wiring snippet for: `langchain`/`langgraph`/`crewai`/`claude-code`/`cursor`/`codex`/`none`. |
+| `securevector_runtime` | string | `none` | Client to emit a wiring snippet for. SDKs: `langchain`/`langgraph`/`crewai`. Plugins: `claude-code`/`cursor`/`codex`/`copilot-cli`/`openclaw`. Or `none`. |
 | `enable_persistence` | bool | `true` | Mount a GCS volume at `/data` for the audit hash-chain. |
 | `persistence_bucket_name` | string | `""` | Override bucket name (default `<project>-<name>-data`). |
 | `bucket_force_destroy` | bool | `false` | Let `destroy` delete a non-empty bucket (set `true` for trials). |
@@ -97,14 +97,42 @@ scale-to-zero, public URL, clean teardown.
 | `persistence_bucket` | Audit-chain bucket (null if persistence off). |
 | `runtime_snippet` | Copy-paste snippet wiring the chosen SDK/plugin to this engine. |
 
+## Clients — point any SDK or plugin at this engine
+
+`securevector_runtime` makes the module emit a ready-to-paste wiring snippet
+(`terraform output -raw runtime_snippet`). All SecureVector clients are
+supported; the base-URL env var differs by family:
+
+| Client | `securevector_runtime` value | Base-URL env var | Remote bearer auth |
+|---|---|---|---|
+| LangChain / LangGraph / CrewAI SDK | `langchain` / `langgraph` / `crewai` | `SECUREVECTOR_SDK_APP_URL` (+ `SECUREVECTOR_SDK_MODE`) | not yet (#182) |
+| Claude Code plugin | `claude-code` | `SV_BASE_URL` (hooks) · `SECUREVECTOR_URL` (statusline) | not yet (#182) |
+| Cursor plugin | `cursor` | `SV_BASE_URL` · `SECUREVECTOR_URL` | not yet (#182) |
+| Codex plugin | `codex` | `SV_BASE_URL` · `SECUREVECTOR_URL` | not yet (#182) |
+| GitHub Copilot CLI plugin | `copilot-cli` | `SV_BASE_URL` · `SECUREVECTOR_URL` | not yet (#182) |
+| OpenClaw guard | `openclaw` | `SECUREVECTOR_URL` (+ `SECUREVECTOR_API_KEY`) | ✅ `Authorization: Bearer` |
+
+(Plugin list mirrors `securevector-ai-threat-monitor/src/securevector/plugins/`.)
+
 ## Access & auth
 
 The SecureVector engine is single-user by origin. v1 fronts it with an
 **application-layer bearer token** (`auth_token`). When `allow_unauthenticated =
 true`, Cloud Run serves the URL publicly over managed HTTPS and that token is
-what gates access — **always set `auth_token` for an internet-reachable
-deployment**. For stricter setups, set `allow_unauthenticated = false` and reach
-the service via Google IAM (`gcloud run services proxy` / IAP).
+what gates access.
+
+> **Remote-auth caveat (important).** Today **only the OpenClaw plugin forwards a
+> bearer token** to a remote engine (via `SECUREVECTOR_API_KEY` →
+> `Authorization: Bearer`). The three SDKs and the Claude Code / Cursor / Codex /
+> Copilot CLI plugins can target a remote URL but **do not yet send an auth
+> header**. Until first-class remote auth lands ([story #182](https://github.com/Secure-Vector/llm-security-engine/issues/182)),
+> for those clients either:
+> - set `allow_unauthenticated = false` and reach the service over Google IAM
+>   (`gcloud run services proxy` / IAP), or
+> - run with `auth_token = ""` on a private/network-restricted deployment.
+>
+> Set `auth_token` for an internet-reachable deployment **once the clients you
+> use can authenticate** (OpenClaw can today).
 
 > For production, consider sourcing `auth_token` / `cloud_connect_token` from
 > Secret Manager rather than tfvars (roadmap; see open questions in the wiki).
@@ -135,7 +163,7 @@ persistence bucket. No leftover billable resources.
 ## Related
 
 - **Client SDKs:** [`securevector-sdk-langchain`](https://github.com/Secure-Vector/securevector-sdk-langchain) · [`-langgraph`](https://github.com/Secure-Vector/securevector-sdk-langgraph) · [`-crewai`](https://github.com/Secure-Vector/securevector-sdk-crewai)
-- **Other clouds:** `terraform-aws-securevector` · `terraform-azurerm-securevector` · `terraform-oci-securevector`
+- **Other clouds:** `terraform-aws-securevector` · `terraform-azurerm-securevector` · `terraform-oci-securevector` — each ships the **identical** [`runtime.tf`](runtime.tf) (same supported clients, same env-var contract, same auth caveat). That file is the single source of truth for the client list and is kept byte-identical across all four cloud repos.
 - **Engine source / container:** [`securevector-ai-threat-monitor`](https://github.com/Secure-Vector/securevector-ai-threat-monitor)
 
 ## License
