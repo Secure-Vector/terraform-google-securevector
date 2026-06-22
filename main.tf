@@ -85,10 +85,16 @@ resource "google_cloud_run_v2_service" "default" {
   ingress  = "INGRESS_TRAFFIC_ALL"
   labels   = var.labels
 
-  # Allow `terraform destroy` to remove the service cleanly (low-commitment trial).
-  deletion_protection = false
+  # Default false so `terraform destroy` works for low-commitment trials; set
+  # var.deletion_protection = true to protect a production service.
+  deletion_protection = var.deletion_protection
 
   template {
+    # GCS (gcsfuse) volume mounts are only supported on the 2nd-gen execution
+    # environment, so force it when persistence is on (else use the provider
+    # default / explicit override for faster, cheaper cold starts).
+    execution_environment = var.execution_environment != "" ? var.execution_environment : (var.enable_persistence ? "EXECUTION_ENVIRONMENT_GEN2" : null)
+
     service_account = var.service_account_email != "" ? var.service_account_email : null
 
     scaling {
@@ -116,6 +122,20 @@ resource "google_cloud_run_v2_service" "default" {
           cpu    = var.cpu
           memory = var.memory
         }
+      }
+
+      # Wait for the engine to finish booting (rules + Guardian load) before
+      # Cloud Run routes traffic. /health is exempt from the ingress-auth gate,
+      # so the probe works even when ingress_token is set.
+      startup_probe {
+        http_get {
+          path = "/health"
+          port = var.container_port
+        }
+        initial_delay_seconds = 10
+        period_seconds        = 10
+        timeout_seconds       = 5
+        failure_threshold     = 18
       }
 
       dynamic "env" {
@@ -155,7 +175,8 @@ resource "google_cloud_run_v2_service" "default" {
 }
 
 ###############################################################################
-# Public access (gated at the app layer by securevector_api_key)
+# Public access (network layer). App-layer gating is via ingress_token; this
+# only controls whether the run.app URL is reachable without Google IAM.
 ###############################################################################
 
 resource "google_cloud_run_v2_service_iam_member" "public" {

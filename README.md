@@ -57,32 +57,38 @@ terraform apply -var="project_id=my-proj"
 - Terraform `>= 1.5` (or OpenTofu).
 - Permission to enable APIs and create Cloud Run / Storage resources in the project.
 
-### Default path — try it in one command (keyless, public, clean teardown)
+There are two ways to run it. **Option 1** is the standalone self-host engine;
+**Option 2** adds the SecureVector cloud on top.
 
-The fastest way in. Just a project ID: scale-to-zero Cloud Run, a public HTTPS
-URL, no credential to set, and a `terraform destroy` that leaves nothing behind.
-This is the [`examples/free-tier`](examples/free-tier) example.
+| | **Option 1 — Device-level engine** (default) | **Option 2 — + Fleet & advanced cloud ML** |
+|---|---|---|
+| What you get | Your own engine doing **local, device-level** detection — local rules + the **Guardian ML** model — running entirely in your tenant. | Everything in Option 1, **plus** the SecureVector cloud: org **fleet** management, **policy sync**, and the cloud's **advanced ML / enhanced `/analyze`**. |
+| Needs | Just a GCP project. No SecureVector account. | A SecureVector `svet_*` enrollment token (and/or `svpk_*` key); the cloud tiers/billing apply. |
+| Set | nothing extra | `cloud_connect_token` (svet\_) and/or `securevector_api_key` (svpk\_) |
+
+#### Option 1 — Device-level engine (default, one command)
+
+Just a project ID: scale-to-zero Cloud Run, a public HTTPS URL, local detection,
+and a clean `terraform destroy`. This is the [`examples/free-tier`](examples/free-tier) example.
 
 ```bash
 terraform apply -var="project_id=my-project"
-terraform output dashboard_url      # live HTTPS URL
+terraform output dashboard_url      # live HTTPS URL — local engine, device-level detection
 terraform destroy                   # clean teardown, no leftover billing
 ```
 
-> Keyless = the endpoint is open. Perfect for a quick trial or a
-> private/network-restricted deployment. For anything internet-facing, add a
-> credential (alternative path below) or set `allow_unauthenticated = false`.
+> Keyless = the endpoint is open. Fine for a quick trial or a
+> private/network-restricted box. For anything internet-facing, gate it with
+> `ingress_token` (app-layer auth) and/or `allow_unauthenticated = false` (IAM).
 
-### Alternative path — with an API key / minted token (and optional cloud)
+#### Option 2 — Add fleet management + advanced cloud ML
 
-For an internet-facing deployment, gate it with `ingress_token` (app-layer:
-engine requires `Authorization: Bearer`/`X-Api-Key`) and/or
-`allow_unauthenticated = false` (network-layer: Cloud Run IAM) — see
-[Tokens](#tokens--which-credential-enables-what). To connect the engine to the
-SecureVector cloud, set `securevector_api_key` (a personal `svpk_`/legacy key →
-personal cloud mode) and/or `cloud_connect_token` (an `svet_` org token →
-managed **fleet** + **policy sync**) — those are the engine's *outbound*
-credentials, not inbound gates.
+Same engine, now bridged to the SecureVector cloud: set `cloud_connect_token`
+(an `svet_*` org token → **fleet view + policy sync**) and/or
+`securevector_api_key` (a personal `svpk_*`/legacy key → personal cloud mode +
+**enhanced ML `/analyze`**). Those are the engine's *outbound* cloud credentials.
+Add `ingress_token` to authenticate inbound clients. See
+[Tokens](#tokens--which-credential-enables-what).
 
 ```hcl
 module "securevector" {
@@ -91,11 +97,11 @@ module "securevector" {
 
   project_id            = "my-project"
   region                = "us-central1"
-  securevector_runtime  = "langchain"               # emits a wired client snippet
-  ingress_token         = var.ingress_token         # app-layer inbound auth
-  # allow_unauthenticated = false                   # or/also gate at the network layer (IAM)
-  # securevector_api_key = var.svpk_key             # optional: personal cloud mode (outbound)
-  # cloud_connect_token  = var.svet_token           # optional: fleet + policy sync (svet_*)
+  securevector_runtime  = "langchain"            # emits a wired client snippet
+  ingress_token         = var.ingress_token      # app-layer inbound auth
+  cloud_connect_token   = var.svet_token         # → fleet + policy sync (advanced)
+  # securevector_api_key = var.svpk_key          # → personal cloud mode + enhanced ML
+  # allow_unauthenticated = false                # or/also gate at the network layer (IAM)
 }
 
 output "dashboard_url"   { value = module.securevector.dashboard_url }
@@ -128,6 +134,8 @@ Until the Registry listing is live, point `source` at the repo:
 | `persistence_bucket_name` | string | `""` | Override bucket name (default `<project>-<name>-data`). |
 | `bucket_force_destroy` | bool | `false` | Let `destroy` delete a non-empty bucket (set `true` for trials). |
 | `enable_apis` | bool | `true` | Enable required Google APIs. |
+| `execution_environment` | string | `""` | `""` auto-picks GEN2 when persistence is on (required for GCS volumes); or pin GEN1/GEN2. |
+| `deletion_protection` | bool | `false` | Cloud Run deletion protection. `true` to protect a production service. |
 | `service_account_email` | string | `""` | Optional runtime service account. |
 | `labels` | map(string) | `{}` | Labels on created resources. |
 | `extra_env` | map(string) | `{}` | Extra container env vars. |

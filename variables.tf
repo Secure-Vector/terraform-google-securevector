@@ -48,6 +48,11 @@ variable "container_port" {
   description = "Port the engine listens on inside the container. Cloud Run routes HTTPS traffic to this port. The image/command must bind this port on 0.0.0.0."
   type        = number
   default     = 8741
+
+  validation {
+    condition     = var.container_port >= 1 && var.container_port <= 65535
+    error_message = "container_port must be between 1 and 65535."
+  }
 }
 
 variable "container_command" {
@@ -76,18 +81,45 @@ variable "min_instances" {
   description = "Minimum number of instances. 0 = scale-to-zero (cheapest; cold start on first request). Set to 1 to keep the dashboard warm."
   type        = number
   default     = 0
+
+  validation {
+    condition     = var.min_instances >= 0
+    error_message = "min_instances must be >= 0."
+  }
 }
 
 variable "max_instances" {
   description = "Maximum number of instances."
   type        = number
   default     = 2
+
+  validation {
+    condition     = var.max_instances >= 1
+    error_message = "max_instances must be >= 1."
+  }
 }
 
 variable "service_account_email" {
   description = "Optional runtime service account for the Cloud Run service. Empty = the project's default compute service account."
   type        = string
   default     = ""
+}
+
+variable "execution_environment" {
+  description = "Cloud Run execution environment override: \"\" (default) auto-selects GEN2 when persistence is on (required for GCS volume mounts) and the provider default otherwise; or pin EXECUTION_ENVIRONMENT_GEN1 / EXECUTION_ENVIRONMENT_GEN2."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = contains(["", "EXECUTION_ENVIRONMENT_GEN1", "EXECUTION_ENVIRONMENT_GEN2"], var.execution_environment)
+    error_message = "execution_environment must be \"\", EXECUTION_ENVIRONMENT_GEN1, or EXECUTION_ENVIRONMENT_GEN2."
+  }
+}
+
+variable "deletion_protection" {
+  description = "Cloud Run deletion protection. Default false so `terraform destroy` works for trials; set true to protect a production service."
+  type        = bool
+  default     = false
 }
 
 ###############################################################################
@@ -150,7 +182,7 @@ variable "cloud_connect_token" {
 ###############################################################################
 
 variable "enable_persistence" {
-  description = "Mount a GCS-backed volume at /data so the audit hash-chain survives instance restarts. Disable for a stateless throwaway trial."
+  description = "Mount a GCS-backed volume at persistence_mount_path so the audit hash-chain survives instance restarts (forces the GEN2 execution environment). Disable for a stateless throwaway trial."
   type        = bool
   default     = true
 }

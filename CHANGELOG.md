@@ -30,6 +30,18 @@ release per `vX.Y.Z` git tag.
   same clients/snippets.
 - Required-API enablement (`run.googleapis.com`, `storage.googleapis.com`).
 
+### Fixed / hardened (Terraform best-practices review)
+- **Correctness:** force `EXECUTION_ENVIRONMENT_GEN2` when persistence is on —
+  GCS (gcsfuse) volume mounts require gen2, so the default `enable_persistence
+  = true` would otherwise fail at apply. Added `execution_environment` override.
+- Added a `/health` startup probe so Cloud Run waits for the engine to boot
+  before routing (no 503s on cold start).
+- `deletion_protection` is now a variable (default false for trials).
+- Input validation on `container_port` (1–65535), `min_instances` (≥0),
+  `max_instances` (≥1), `execution_environment` (enum).
+- README: Option 1 (device-level engine) vs Option 2 (+ fleet & advanced cloud
+  ML) made explicit; fixed stale `/data` / `securevector_api_key` references.
+
 ### Added (inbound auth)
 - `ingress_token` variable → `SECUREVECTOR_INGRESS_TOKEN`. App-layer inbound
   gate: when set, the engine requires `Authorization: Bearer` / `X-Api-Key` on
