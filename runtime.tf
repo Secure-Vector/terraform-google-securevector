@@ -17,11 +17,13 @@
 #                                                   -> SV_BASE_URL (hooks) / SECUREVECTOR_URL (statusline)
 #     openclaw                                      -> SECUREVECTOR_URL
 #   Credential (forwarded by the client):
-#     SECUREVECTOR_API_KEY — an API key or token a client (e.g. openclaw) can
-#     forward to the engine as Authorization: Bearer. IMPORTANT: the engine does
-#     NOT yet validate an inbound credential (verified against threat-monitor) —
-#     so today this does not gate access; protect a public deployment with cloud
-#     IAM instead. Engine-side inbound enforcement is tracked in story #182.
+#     When the module sets var.ingress_token, the engine REQUIRES a matching
+#     credential on every request (Authorization: Bearer <token> or
+#     X-Api-Key: <token>) — validated by the ingress_auth middleware in
+#     threat-monitor. A client forwards it via SECUREVECTOR_API_KEY. Today
+#     header-capable clients (openclaw, curl) can send it; SDK / JS-hook
+#     client-side forwarding is still rolling out (#182). For those, either
+#     leave ingress_token unset or front the engine with the cloud's IAM.
 #     Tokens are never interpolated into snippets (sensitive) — shown as
 #     <placeholders> only.
 ###############################################################################
@@ -54,15 +56,16 @@ locals {
         plugins  -> export SV_BASE_URL=${local.base_url}
         openclaw -> export SECUREVECTOR_URL=${local.base_url}
 
-      A client may forward a credential (engine-side enforcement is #182):
-        export SECUREVECTOR_API_KEY=<api key / token>
+      If the module set ingress_token, forward it as the credential
+      (Authorization: Bearer / X-Api-Key); header-capable clients today:
+        export SECUREVECTOR_API_KEY=<= ingress_token>
     EOT
 
     langchain = <<-EOT
       pip install securevector-sdk-langchain
       export SECUREVECTOR_SDK_APP_URL=${local.base_url}
       export SECUREVECTOR_SDK_MODE=enforce
-      export SECUREVECTOR_API_KEY=<api key / token>      # optional; forwarded by client, engine-side enforcement is #182
+      export SECUREVECTOR_API_KEY=<api key / token>      # = ingress_token if set; SDK forwarding rolling out (#182)
 
       # in your agent:
       from securevector_sdk_langchain import secure_middleware
@@ -74,7 +77,7 @@ locals {
       pip install securevector-sdk-langgraph
       export SECUREVECTOR_SDK_APP_URL=${local.base_url}
       export SECUREVECTOR_SDK_MODE=enforce
-      export SECUREVECTOR_API_KEY=<api key / token>      # optional; forwarded by client, engine-side enforcement is #182
+      export SECUREVECTOR_API_KEY=<api key / token>      # = ingress_token if set; SDK forwarding rolling out (#182)
 
       # in your agent:
       from securevector_sdk_langgraph import secure_middleware
@@ -86,7 +89,7 @@ locals {
       pip install securevector-sdk-crewai
       export SECUREVECTOR_SDK_APP_URL=${local.base_url}
       export SECUREVECTOR_SDK_MODE=enforce
-      export SECUREVECTOR_API_KEY=<api key / token>      # optional; forwarded by client, engine-side enforcement is #182
+      export SECUREVECTOR_API_KEY=<api key / token>      # = ingress_token if set; SDK forwarding rolling out (#182)
 
       # wrap your crew's tools before kickoff:
       from securevector_sdk_crewai import secure_tools
@@ -97,34 +100,34 @@ locals {
       # Install the SecureVector Claude Code plugin, then point its hooks here:
       export SV_BASE_URL=${local.base_url}
       export SECUREVECTOR_URL=${local.base_url}              # read by the statusline
-      export SECUREVECTOR_API_KEY=<api key / token>      # optional; forwarded as Bearer, engine-side enforcement is #182
+      export SECUREVECTOR_API_KEY=<api key / token>      # = ingress_token if set; sent as Bearer (openclaw today)
     EOT
 
     cursor = <<-EOT
       # Install the SecureVector Cursor plugin, then point its hooks here:
       export SV_BASE_URL=${local.base_url}
       export SECUREVECTOR_URL=${local.base_url}              # read by the statusline
-      export SECUREVECTOR_API_KEY=<api key / token>      # optional; forwarded as Bearer, engine-side enforcement is #182
+      export SECUREVECTOR_API_KEY=<api key / token>      # = ingress_token if set; sent as Bearer (openclaw today)
     EOT
 
     codex = <<-EOT
       # Install the SecureVector Codex plugin, then point its hooks here:
       export SV_BASE_URL=${local.base_url}
       export SECUREVECTOR_URL=${local.base_url}              # read by the statusline
-      export SECUREVECTOR_API_KEY=<api key / token>      # optional; forwarded as Bearer, engine-side enforcement is #182
+      export SECUREVECTOR_API_KEY=<api key / token>      # = ingress_token if set; sent as Bearer (openclaw today)
     EOT
 
     copilot-cli = <<-EOT
       # Install the SecureVector GitHub Copilot CLI plugin, then point it here:
       export SV_BASE_URL=${local.base_url}
       export SECUREVECTOR_URL=${local.base_url}              # read by the statusline
-      export SECUREVECTOR_API_KEY=<api key / token>      # optional; forwarded as Bearer, engine-side enforcement is #182
+      export SECUREVECTOR_API_KEY=<api key / token>      # = ingress_token if set; sent as Bearer (openclaw today)
     EOT
 
     openclaw = <<-EOT
       # Point the SecureVector OpenClaw guard here (openclaw.json or env):
       export SECUREVECTOR_URL=${local.base_url}
-      export SECUREVECTOR_API_KEY=<api key / token>      # optional; forwarded as Bearer, engine-side enforcement is #182
+      export SECUREVECTOR_API_KEY=<api key / token>      # = ingress_token if set; sent as Bearer (openclaw today)
     EOT
   }
 

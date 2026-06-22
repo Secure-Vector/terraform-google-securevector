@@ -26,8 +26,14 @@ locals {
   #                             `securevector-app enroll` subcommand, so the IMAGE
   #                             ENTRYPOINT must enroll before serving (see README).
   container_env = merge(
+    # INBOUND gate — when set, the engine requires this credential on every
+    # request (Authorization: Bearer or X-Api-Key); /health stays open for
+    # probes. Validated by the ingress_auth middleware in threat-monitor.
+    var.ingress_token != "" ? { SECUREVECTOR_INGRESS_TOKEN = var.ingress_token } : {},
+    # OUTBOUND cloud key (personal cloud mode; cloud_sync sends as X-Api-Key).
     var.securevector_api_key != "" ? { SECUREVECTOR_API_KEY = var.securevector_api_key } : {},
     var.securevector_api_url != "" ? { SECUREVECTOR_API_URL = var.securevector_api_url } : {},
+    # svet_* org enrollment (entrypoint runs `enroll` before serving).
     var.cloud_connect_token != "" ? { SECUREVECTOR_ENROLL_TOKEN = var.cloud_connect_token } : {},
     var.extra_env,
   )

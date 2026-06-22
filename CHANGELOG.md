@@ -30,6 +30,14 @@ release per `vX.Y.Z` git tag.
   same clients/snippets.
 - Required-API enablement (`run.googleapis.com`, `storage.googleapis.com`).
 
+### Added (inbound auth)
+- `ingress_token` variable → `SECUREVECTOR_INGRESS_TOKEN`. App-layer inbound
+  gate: when set, the engine requires `Authorization: Bearer` / `X-Api-Key` on
+  every request (`/health` stays open), validated by the new `ingress_auth`
+  middleware in securevector-ai-threat-monitor (fail-open when unset). Pairs
+  with or replaces Cloud Run IAM. Header-capable clients (OpenClaw, curl) can
+  authenticate today; SDK/JS-hook client-side forwarding is rolling out (#182).
+
 ### Changed (DevOps review — aligned to the real app interface)
 - Container env now uses only vars the app actually reads (verified against
   securevector-ai-threat-monitor): dropped the invented `SECUREVECTOR_HOST` /

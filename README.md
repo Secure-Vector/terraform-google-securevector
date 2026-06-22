@@ -16,20 +16,21 @@ This is **bring-your-own-cloud (BYOC) self-hosting**: the engine and all scanned
 data live in *your* tenant, on *your* account — nothing leaves. It is the
 local-first story scaled from one laptop to one shared box you control.
 
-> ⚠️ **Status: pre-release — not yet runnable.** This module depends on two
-> prerequisites that do not ship yet (tracked in
-> [story #182](https://github.com/Secure-Vector/llm-security-engine/issues/182)):
-> 1. **A published engine container image** — `securevector-ai-threat-monitor`
->    has no app `Dockerfile` / ghcr image yet. The image's entrypoint must bind
->    `0.0.0.0:$PORT`, store data at the mount path, and `enroll` from
->    `SECUREVECTOR_ENROLL_TOKEN` before serving.
-> 2. **Inbound auth in the engine** — the app has no per-caller credential check
->    today, so a public deployment is protected **only by Cloud Run IAM**
->    (`allow_unauthenticated = false`). Set the api-key / enroll-token vars and
->    the module wires them correctly, but engine-side enforcement is #182.
+> ⚠️ **Status: pre-release — pending an image publish.** Both prerequisites are
+> now implemented in `securevector-ai-threat-monitor` (tracked in
+> [story #182](https://github.com/Secure-Vector/llm-security-engine/issues/182)),
+> awaiting merge + the first ghcr publish:
+> 1. **Engine container image** — `Dockerfile` (headless `server` extras,
+>    binds `0.0.0.0:$PORT`, enroll-then-serve, data at the mount path) +
+>    multi-arch ghcr publish workflow. Not yet pushed, so
+>    `var.image` has no image to pull until the first release.
+> 2. **Inbound auth** — `ingress_auth` middleware: when `ingress_token` is set
+>    the engine requires `Authorization: Bearer` / `X-Api-Key` (fail-open when
+>    unset). Header-capable clients (OpenClaw, curl) work today; SDK / JS-hook
+>    client-side forwarding is still rolling out.
 >
-> The Terraform itself is validated and correct against the real app interface;
-> it will deploy a working engine the moment the image contract above is met.
+> The Terraform is validated against the real app interface and deploys a working
+> engine the moment that image is published.
 
 [![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.svg)](https://ssh.cloud.google.com/cloudshell/editor?cloudshell_git_repo=https://github.com/Secure-Vector/terraform-google-securevector&cloudshell_working_dir=examples/free-tier)
 
@@ -74,12 +75,14 @@ terraform destroy                   # clean teardown, no leftover billing
 
 ### Alternative path — with an API key / minted token (and optional cloud)
 
-For an internet-facing deployment, set `allow_unauthenticated = false` (Cloud
-Run IAM is the only inbound protection today — see [Tokens](#tokens--which-credential-enables-what)).
-To connect the engine to the SecureVector cloud, set `securevector_api_key` (a
-personal `svpk_`/legacy key → personal cloud mode) and/or `cloud_connect_token`
-(an `svet_` org token → managed **fleet** + **policy sync**). Both are the
-engine's *outbound* credentials, not inbound gates.
+For an internet-facing deployment, gate it with `ingress_token` (app-layer:
+engine requires `Authorization: Bearer`/`X-Api-Key`) and/or
+`allow_unauthenticated = false` (network-layer: Cloud Run IAM) — see
+[Tokens](#tokens--which-credential-enables-what). To connect the engine to the
+SecureVector cloud, set `securevector_api_key` (a personal `svpk_`/legacy key →
+personal cloud mode) and/or `cloud_connect_token` (an `svet_` org token →
+managed **fleet** + **policy sync**) — those are the engine's *outbound*
+credentials, not inbound gates.
 
 ```hcl
 module "securevector" {
@@ -89,7 +92,8 @@ module "securevector" {
   project_id            = "my-project"
   region                = "us-central1"
   securevector_runtime  = "langchain"               # emits a wired client snippet
-  allow_unauthenticated = false                     # inbound protection = Cloud Run IAM
+  ingress_token         = var.ingress_token         # app-layer inbound auth
+  # allow_unauthenticated = false                   # or/also gate at the network layer (IAM)
   # securevector_api_key = var.svpk_key             # optional: personal cloud mode (outbound)
   # cloud_connect_token  = var.svet_token           # optional: fleet + policy sync (svet_*)
 }
@@ -113,7 +117,8 @@ Until the Registry listing is live, point `source` at the repo:
 | `cpu` / `memory` | string | `1` / `512Mi` | Per-instance limits. |
 | `min_instances` / `max_instances` | number | `0` / `2` | `0` = scale-to-zero. |
 | `container_command` | list(string) | `[]` | Override the image entrypoint. `[]` = use the image's own. App takes host/port as CLI args. |
-| `allow_unauthenticated` | bool | `true` | Public run.app URL. **No inbound app auth exists** — set `false` for non-trial internet deployments (IAM is the only gate). |
+| `allow_unauthenticated` | bool | `true` | Public run.app URL (network layer). Pair with `ingress_token`, or set `false` to require Google IAM. |
+| `ingress_token` | string (sensitive) | `""` | App-layer inbound gate → `SECUREVECTOR_INGRESS_TOKEN`. When set, the engine requires `Authorization: Bearer`/`X-Api-Key`; `/health` stays open. |
 | `securevector_api_key` | string (sensitive) | `""` | **Outbound** cloud key (`svpk_`/legacy) → `SECUREVECTOR_API_KEY` (personal cloud mode). Not an inbound gate. |
 | `securevector_api_url` | string | `""` | Override the SecureVector cloud API base URL. |
 | `cloud_connect_token` | string (sensitive) | `""` | **Outbound** `svet_*` org enroll token → `SECUREVECTOR_ENROLL_TOKEN` (fleet + policy sync). Needs the image entrypoint to enroll. |
@@ -153,10 +158,12 @@ family** and is the part that works today:
 | GitHub Copilot CLI plugin | `copilot-cli` | `SV_BASE_URL` · `SECUREVECTOR_URL` |
 | OpenClaw guard | `openclaw` | `SECUREVECTOR_URL` |
 
-A client may also forward a credential via `SECUREVECTOR_API_KEY` (OpenClaw sends
-it as `Authorization: Bearer`), but **the engine does not validate an inbound
-credential yet** (#182) — so today that does not gate access. (Plugin list
-mirrors `securevector-ai-threat-monitor/src/securevector/plugins/`.)
+When the module sets `ingress_token`, the engine **requires** a credential
+(`Authorization: Bearer` / `X-Api-Key`). A client forwards it via
+`SECUREVECTOR_API_KEY` — **OpenClaw (and any header-capable client like curl)
+works today**; SDK / JS-hook client-side forwarding is rolling out (#182), so for
+those leave `ingress_token` unset or use Cloud Run IAM. (Plugin list mirrors
+`securevector-ai-threat-monitor/src/securevector/plugins/`.)
 
 ## Tokens — which credential enables what
 
@@ -165,7 +172,7 @@ the inbound story:
 
 | Capability | Direction | Credential | Notes |
 |---|---|---|---|
-| **Remote analyze** (client → engine) | inbound | *(none today)* | No per-caller auth in the engine yet → protect with Cloud Run IAM (`allow_unauthenticated = false`). App-layer auth = #182. |
+| **Remote analyze** (client → engine) | inbound | `ingress_token` → `SECUREVECTOR_INGRESS_TOKEN` | Engine requires `Authorization: Bearer`/`X-Api-Key` when set (fail-open when unset). Header-capable clients (OpenClaw, curl) work today; SDK/JS-hook forwarding rolling out (#182). Or use Cloud Run IAM. |
 | **Personal cloud mode** (enhanced detection) | outbound | `securevector_api_key` (`svpk_`/legacy) → `SECUREVECTOR_API_KEY` | Engine presents it to the cloud as `X-Api-Key` (`cloud_sync.py`). No policy sync. |
 | **Forward to fleet** (org visibility) | outbound | `cloud_connect_token` (`svet_*`) → `SECUREVECTOR_ENROLL_TOKEN` | Org enrollment. Needs the image entrypoint to run `securevector-app enroll`. |
 | **Sync policies to local** (signed bundles) | outbound→in | `cloud_connect_token` (`svet_*` **only**) | `svpk_`/legacy/none ⇒ Policy Sync OFF — no partial mode (`device_admin.py`). |

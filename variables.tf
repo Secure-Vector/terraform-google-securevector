@@ -93,17 +93,27 @@ variable "service_account_email" {
 ###############################################################################
 # Access & auth
 #
-# IMPORTANT (verified against securevector-ai-threat-monitor): the engine has
-# NO inbound auth gate today — SECUREVECTOR_API_KEY is the engine's OUTBOUND
-# cloud key, not a per-caller credential. So the ONLY thing that protects a
-# public deployment today is Cloud Run IAM (allow_unauthenticated = false).
-# App-layer inbound auth is tracked in story #182.
+# Two independent layers:
+#   - ingress_token  -> SECUREVECTOR_INGRESS_TOKEN: APP-LAYER inbound gate. When
+#     set, the engine requires the credential on every request (Authorization:
+#     Bearer or X-Api-Key); /health stays open. Validated by the ingress_auth
+#     middleware in securevector-ai-threat-monitor (pending release).
+#   - allow_unauthenticated -> Cloud Run IAM: NETWORK-LAYER gate.
+# Use either or both. securevector_api_key below is the engine's OUTBOUND cloud
+# key, NOT an inbound gate — don't confuse the two.
 ###############################################################################
 
 variable "allow_unauthenticated" {
-  description = "Grant roles/run.invoker to allUsers so the run.app URL is reachable over the public internet. The engine has no inbound auth today, so set this to FALSE for any non-trial internet deployment and reach the service over Google IAM (gcloud run services proxy / IAP)."
+  description = "Grant roles/run.invoker to allUsers so the run.app URL is reachable over the public internet. Pair with ingress_token for app-layer auth, or set FALSE to require Google IAM (gcloud run services proxy / IAP) as the gate."
   type        = bool
   default     = true
+}
+
+variable "ingress_token" {
+  description = "App-layer inbound credential. When set, the engine requires it on every request (sent as Authorization: Bearer <token> or X-Api-Key: <token>); /health stays open for probes. Header-capable clients (OpenClaw, curl) can pass it today; SDK/JS-hook client-side forwarding is still rolling out (#182). Empty = no app-layer gate (rely on Cloud Run IAM)."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "securevector_api_key" {
