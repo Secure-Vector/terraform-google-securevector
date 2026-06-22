@@ -45,9 +45,15 @@ variable "image" {
 }
 
 variable "container_port" {
-  description = "Port the engine listens on inside the container. Cloud Run routes HTTPS traffic to this port."
+  description = "Port the engine listens on inside the container. Cloud Run routes HTTPS traffic to this port. The image/command must bind this port on 0.0.0.0."
   type        = number
   default     = 8741
+}
+
+variable "container_command" {
+  description = "Override the container entrypoint. Empty (default) defers to the image ENTRYPOINT. The app takes host/port as CLI args (NOT env), so a working override looks like [\"securevector-app\", \"--web\", \"--host\", \"0.0.0.0\", \"--port\", \"8741\"]. (Enrollment from SECUREVECTOR_ENROLL_TOKEN must be handled by the image entrypoint, not this command.)"
+  type        = list(string)
+  default     = []
 }
 
 ###############################################################################
@@ -87,26 +93,30 @@ variable "service_account_email" {
 ###############################################################################
 # Access & auth
 #
-# The SecureVector engine is single-user by origin. The application-layer
-# credential is an API key / minted token (securevector_api_key): clients
-# forward it via SECUREVECTOR_API_KEY as Authorization: Bearer (the bearer
-# token is optional, defaulting to the api key). When allow_unauthenticated is
-# true, Cloud Run serves the run.app URL publicly over managed HTTPS and that
-# credential is what gates access — so SET securevector_api_key in any
-# internet-reachable deployment.
+# IMPORTANT (verified against securevector-ai-threat-monitor): the engine has
+# NO inbound auth gate today — SECUREVECTOR_API_KEY is the engine's OUTBOUND
+# cloud key, not a per-caller credential. So the ONLY thing that protects a
+# public deployment today is Cloud Run IAM (allow_unauthenticated = false).
+# App-layer inbound auth is tracked in story #182.
 ###############################################################################
 
 variable "allow_unauthenticated" {
-  description = "Grant roles/run.invoker to allUsers so the run.app URL is reachable over the public internet (gated by securevector_api_key at the app layer). Set false to require Google IAM (gcloud proxy / IAP) instead."
+  description = "Grant roles/run.invoker to allUsers so the run.app URL is reachable over the public internet. The engine has no inbound auth today, so set this to FALSE for any non-trial internet deployment and reach the service over Google IAM (gcloud run services proxy / IAP)."
   type        = bool
   default     = true
 }
 
 variable "securevector_api_key" {
-  description = "API key or minted token (svet_* org enrollment / svpk_* personal key) the engine requires on inbound requests. Clients forward it via SECUREVECTOR_API_KEY (Authorization: Bearer). STRONGLY recommended when allow_unauthenticated = true. Empty = no app-layer gate (rely on Cloud Run IAM only)."
+  description = "OUTBOUND cloud credential: a personal API key (svpk_* / legacy) the engine presents to the SecureVector cloud (sent as X-Api-Key by cloud_sync) for personal cloud mode / enhanced detection. This is NOT an inbound gate and does not protect /analyze. Empty = no cloud key."
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "securevector_api_url" {
+  description = "Optional override for the SecureVector cloud API base URL (SECUREVECTOR_API_URL). Empty = the app's built-in default."
+  type        = string
+  default     = ""
 }
 
 ###############################################################################
@@ -116,7 +126,7 @@ variable "securevector_api_key" {
 ###############################################################################
 
 variable "cloud_connect_token" {
-  description = "Optional SecureVector Cloud Connect enrollment token (svet_* / svpk_*). When set, the node enrolls into the managed fleet view. Empty = pure self-host, no outbound enrollment."
+  description = "Optional svet_* org ENROLLMENT token (passed as SECUREVECTOR_ENROLL_TOKEN). Enrolls the node into the org FLEET view AND receives signed policy bundles (Policy Sync ON). NOTE: only the svet_* enroll path enables policy sync; a personal key (svpk_*) goes in securevector_api_key instead. Requires the image entrypoint to run `securevector-app enroll` before serving (see README / #182). Empty = pure self-host, no enrollment."
   type        = string
   default     = ""
   sensitive   = true
@@ -139,6 +149,12 @@ variable "persistence_bucket_name" {
   description = "Name of the GCS bucket for persistence. Empty = derive \"<project_id>-<name>-data\". Bucket names are globally unique."
   type        = string
   default     = ""
+}
+
+variable "persistence_mount_path" {
+  description = "Path the persistence volume mounts at inside the container. The app has NO data-dir env override — it stores its SQLite DB / audit chain at $HOME/.local/share/securevector/threat-monitor — so this MUST match that path in the published image. Default assumes HOME=/home/securevector."
+  type        = string
+  default     = "/home/securevector/.local/share/securevector/threat-monitor"
 }
 
 variable "bucket_force_destroy" {

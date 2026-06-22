@@ -13,18 +13,22 @@ locals {
 
   bucket_name = var.persistence_bucket_name != "" ? var.persistence_bucket_name : "${var.project_id}-${var.name}-data"
 
-  # Server-mode contract passed to the engine container. These env names track
-  # the documented "server mode" in securevector-ai-threat-monitor (bind beyond
-  # loopback, app-layer auth, persistence path). Empty optional values are
-  # filtered out so they are never set to "".
+  # Engine container env. Only env vars the app actually reads
+  # (verified against securevector-ai-threat-monitor). Host/port are NOT env —
+  # they are CLI args on the launch command (see var.container_command). Empty
+  # optional values are filtered out so they are never set to "".
+  #
+  #   SECUREVECTOR_API_KEY    — engine's OUTBOUND cloud key (personal cloud mode;
+  #                             cloud_sync sends it as X-Api-Key). NOT an inbound
+  #                             auth gate — it does not protect /analyze.
+  #   SECUREVECTOR_API_URL    — override the SecureVector cloud API base URL.
+  #   SECUREVECTOR_ENROLL_TOKEN — svet_* org enrollment token. Consumed by the
+  #                             `securevector-app enroll` subcommand, so the IMAGE
+  #                             ENTRYPOINT must enroll before serving (see README).
   container_env = merge(
-    {
-      SECUREVECTOR_HOST = "0.0.0.0"
-      SECUREVECTOR_PORT = tostring(var.container_port)
-    },
     var.securevector_api_key != "" ? { SECUREVECTOR_API_KEY = var.securevector_api_key } : {},
-    var.cloud_connect_token != "" ? { SECUREVECTOR_CLOUD_CONNECT_TOKEN = var.cloud_connect_token } : {},
-    var.enable_persistence ? { SECUREVECTOR_DATA_DIR = "/data" } : {},
+    var.securevector_api_url != "" ? { SECUREVECTOR_API_URL = var.securevector_api_url } : {},
+    var.cloud_connect_token != "" ? { SECUREVECTOR_ENROLL_TOKEN = var.cloud_connect_token } : {},
     var.extra_env,
   )
 
@@ -89,6 +93,14 @@ resource "google_cloud_run_v2_service" "default" {
     containers {
       image = var.image
 
+      # Launch command. The app binds host/port from CLI args (--host/--port),
+      # NOT env. Empty list (default) = defer to the image's own ENTRYPOINT,
+      # which per the #182 image contract must bind 0.0.0.0:container_port and
+      # enroll from SECUREVECTOR_ENROLL_TOKEN (when set) before serving. Set a
+      # non-empty list to override, e.g.
+      # ["securevector-app","--web","--host","0.0.0.0","--port","8741"].
+      command = length(var.container_command) > 0 ? var.container_command : null
+
       ports {
         container_port = var.container_port
       }
@@ -108,11 +120,15 @@ resource "google_cloud_run_v2_service" "default" {
         }
       }
 
+      # Persistence mounts at the engine's data dir. The app has NO data-dir env
+      # override — it uses $HOME/.local/share/securevector/threat-monitor — so
+      # persistence_mount_path MUST equal that path in the published image (the
+      # image must run as a user whose HOME maps here). See README / #182.
       dynamic "volume_mounts" {
         for_each = var.enable_persistence ? [1] : []
         content {
           name       = "data"
-          mount_path = "/data"
+          mount_path = var.persistence_mount_path
         }
       }
     }

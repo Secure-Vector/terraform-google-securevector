@@ -30,7 +30,26 @@ release per `vX.Y.Z` git tag.
   same clients/snippets.
 - Required-API enablement (`run.googleapis.com`, `storage.googleapis.com`).
 
+### Changed (DevOps review — aligned to the real app interface)
+- Container env now uses only vars the app actually reads (verified against
+  securevector-ai-threat-monitor): dropped the invented `SECUREVECTOR_HOST` /
+  `SECUREVECTOR_PORT` / `SECUREVECTOR_DATA_DIR` / `SECUREVECTOR_CLOUD_CONNECT_TOKEN`.
+- Host/port are CLI args (`--host`/`--port`), not env — added `container_command`
+  (default defers to the image entrypoint, which must bind `0.0.0.0:container_port`).
+- `securevector_api_key` reframed as the engine's **outbound** cloud key
+  (`SECUREVECTOR_API_KEY` → `X-Api-Key`), **not** an inbound gate.
+- `cloud_connect_token` now passed as `SECUREVECTOR_ENROLL_TOKEN` (svet_* org
+  enroll → fleet + policy sync); requires the image entrypoint to run
+  `securevector-app enroll`.
+- Persistence mounts at `persistence_mount_path` (the app's real data dir
+  `$HOME/.local/share/securevector/threat-monitor`) instead of `/data`; the app
+  has no data-dir env override.
+- README: added a pre-release status banner; corrected auth (no inbound gate
+  today — Cloud Run IAM only) and a token→capability matrix.
+
 ### Notes
-- Depends on the public engine container image at
-  `ghcr.io/secure-vector/securevector-ai-threat-monitor` and the app's
-  documented "server mode" (see securevector-ai-threat-monitor, story #182).
+- Hard prerequisites (story #182): a published engine container image (no app
+  Dockerfile / ghcr CI exists yet) whose entrypoint binds `0.0.0.0:$PORT`,
+  stores data at the mount path, and enrolls from `SECUREVECTOR_ENROLL_TOKEN`;
+  plus engine-side inbound auth. The Terraform is correct against the real app
+  interface and will deploy a working engine once that image ships.

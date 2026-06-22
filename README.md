@@ -16,6 +16,21 @@ This is **bring-your-own-cloud (BYOC) self-hosting**: the engine and all scanned
 data live in *your* tenant, on *your* account — nothing leaves. It is the
 local-first story scaled from one laptop to one shared box you control.
 
+> ⚠️ **Status: pre-release — not yet runnable.** This module depends on two
+> prerequisites that do not ship yet (tracked in
+> [story #182](https://github.com/Secure-Vector/llm-security-engine/issues/182)):
+> 1. **A published engine container image** — `securevector-ai-threat-monitor`
+>    has no app `Dockerfile` / ghcr image yet. The image's entrypoint must bind
+>    `0.0.0.0:$PORT`, store data at the mount path, and `enroll` from
+>    `SECUREVECTOR_ENROLL_TOKEN` before serving.
+> 2. **Inbound auth in the engine** — the app has no per-caller credential check
+>    today, so a public deployment is protected **only by Cloud Run IAM**
+>    (`allow_unauthenticated = false`). Set the api-key / enroll-token vars and
+>    the module wires them correctly, but engine-side enforcement is #182.
+>
+> The Terraform itself is validated and correct against the real app interface;
+> it will deploy a working engine the moment the image contract above is met.
+
 [![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.svg)](https://ssh.cloud.google.com/cloudshell/editor?cloudshell_git_repo=https://github.com/Secure-Vector/terraform-google-securevector&cloudshell_working_dir=examples/free-tier)
 
 ---
@@ -27,11 +42,11 @@ box — so the whole deployment is a handful of resources with no VPC, load
 balancer, or manual TLS. Cheapest substrate to try, cleanest to tear down.
 
 ```
-terraform apply -var="project_id=my-proj" -var="securevector_runtime=langchain"
+terraform apply -var="project_id=my-proj"
 #
 # Outputs:
-#   dashboard_url   = "https://securevector-xxxx-uc.a.run.app"
-#   runtime_snippet = "pip install securevector-sdk-langchain  +  wired middleware"
+#   dashboard_url   = "https://securevector-xxxx-uc.a.run.app"   # live, public, managed TLS
+#   runtime_snippet = "point any SecureVector SDK/plugin at the URL above"
 ```
 
 ## Quick start
@@ -41,17 +56,42 @@ terraform apply -var="project_id=my-proj" -var="securevector_runtime=langchain"
 - Terraform `>= 1.5` (or OpenTofu).
 - Permission to enable APIs and create Cloud Run / Storage resources in the project.
 
-### Use as a module
+### Default path — try it in one command (keyless, public, clean teardown)
+
+The fastest way in. Just a project ID: scale-to-zero Cloud Run, a public HTTPS
+URL, no credential to set, and a `terraform destroy` that leaves nothing behind.
+This is the [`examples/free-tier`](examples/free-tier) example.
+
+```bash
+terraform apply -var="project_id=my-project"
+terraform output dashboard_url      # live HTTPS URL
+terraform destroy                   # clean teardown, no leftover billing
+```
+
+> Keyless = the endpoint is open. Perfect for a quick trial or a
+> private/network-restricted deployment. For anything internet-facing, add a
+> credential (alternative path below) or set `allow_unauthenticated = false`.
+
+### Alternative path — with an API key / minted token (and optional cloud)
+
+For an internet-facing deployment, set `allow_unauthenticated = false` (Cloud
+Run IAM is the only inbound protection today — see [Tokens](#tokens--which-credential-enables-what)).
+To connect the engine to the SecureVector cloud, set `securevector_api_key` (a
+personal `svpk_`/legacy key → personal cloud mode) and/or `cloud_connect_token`
+(an `svet_` org token → managed **fleet** + **policy sync**). Both are the
+engine's *outbound* credentials, not inbound gates.
 
 ```hcl
 module "securevector" {
   source  = "Secure-Vector/securevector/google"
   version = "~> 0.1"   # once published to the Terraform Registry
 
-  project_id           = "my-project"
-  region               = "us-central1"
-  securevector_runtime = "langchain"               # emits a wired client snippet
-  securevector_api_key = var.securevector_api_key  # API key / minted token clients forward
+  project_id            = "my-project"
+  region                = "us-central1"
+  securevector_runtime  = "langchain"               # emits a wired client snippet
+  allow_unauthenticated = false                     # inbound protection = Cloud Run IAM
+  # securevector_api_key = var.svpk_key             # optional: personal cloud mode (outbound)
+  # cloud_connect_token  = var.svet_token           # optional: fleet + policy sync (svet_*)
 }
 
 output "dashboard_url"   { value = module.securevector.dashboard_url }
@@ -60,9 +100,6 @@ output "runtime_snippet" { value = module.securevector.runtime_snippet }
 
 Until the Registry listing is live, point `source` at the repo:
 `source = "github.com/Secure-Vector/terraform-google-securevector"`.
-
-The fastest path is the [`examples/free-tier`](examples/free-tier) example —
-scale-to-zero, public URL, clean teardown.
 
 ## Inputs
 
@@ -75,11 +112,14 @@ scale-to-zero, public URL, clean teardown.
 | `container_port` | number | `8741` | Port the engine listens on. |
 | `cpu` / `memory` | string | `1` / `512Mi` | Per-instance limits. |
 | `min_instances` / `max_instances` | number | `0` / `2` | `0` = scale-to-zero. |
-| `allow_unauthenticated` | bool | `true` | Public run.app URL (gated by `securevector_api_key`). `false` = Google IAM only. |
-| `securevector_api_key` | string (sensitive) | `""` | API key / minted token (`svet_`/`svpk_`) the engine requires; clients forward it via `SECUREVECTOR_API_KEY`. **Set this when public.** |
-| `cloud_connect_token` | string (sensitive) | `""` | Optional Cloud Connect enrollment into the managed fleet. |
+| `container_command` | list(string) | `[]` | Override the image entrypoint. `[]` = use the image's own. App takes host/port as CLI args. |
+| `allow_unauthenticated` | bool | `true` | Public run.app URL. **No inbound app auth exists** — set `false` for non-trial internet deployments (IAM is the only gate). |
+| `securevector_api_key` | string (sensitive) | `""` | **Outbound** cloud key (`svpk_`/legacy) → `SECUREVECTOR_API_KEY` (personal cloud mode). Not an inbound gate. |
+| `securevector_api_url` | string | `""` | Override the SecureVector cloud API base URL. |
+| `cloud_connect_token` | string (sensitive) | `""` | **Outbound** `svet_*` org enroll token → `SECUREVECTOR_ENROLL_TOKEN` (fleet + policy sync). Needs the image entrypoint to enroll. |
 | `securevector_runtime` | string | `none` | Client to emit a wiring snippet for. SDKs: `langchain`/`langgraph`/`crewai`. Plugins: `claude-code`/`cursor`/`codex`/`copilot-cli`/`openclaw`. Or `none`. |
-| `enable_persistence` | bool | `true` | Mount a GCS volume at `/data` for the audit hash-chain. |
+| `enable_persistence` | bool | `true` | Mount a GCS volume for the audit hash-chain. |
+| `persistence_mount_path` | string | `…/securevector/threat-monitor` | Where the volume mounts; must equal the app data dir in the image. |
 | `persistence_bucket_name` | string | `""` | Override bucket name (default `<project>-<name>-data`). |
 | `bucket_force_destroy` | bool | `false` | Let `destroy` delete a non-empty bucket (set `true` for trials). |
 | `enable_apis` | bool | `true` | Enable required Google APIs. |
@@ -101,53 +141,56 @@ scale-to-zero, public URL, clean teardown.
 
 `securevector_runtime` makes the module emit a ready-to-paste wiring snippet
 (`terraform output -raw runtime_snippet`). All SecureVector clients are
-supported. The base-URL env var differs by family; **every client forwards the
-same credential** — `SECUREVECTOR_API_KEY` (an API key or minted `svet_`/`svpk_`
-token) sent as `Authorization: Bearer`:
+supported. **The base-URL env var (how a client targets the engine) differs by
+family** and is the part that works today:
 
-| Client | `securevector_runtime` value | Base-URL env var | Credential (forwarded) |
+| Client | `securevector_runtime` value | Base-URL env var (targets the engine) |
+|---|---|---|
+| LangChain / LangGraph / CrewAI SDK | `langchain` / `langgraph` / `crewai` | `SECUREVECTOR_SDK_APP_URL` (+ `SECUREVECTOR_SDK_MODE`) |
+| Claude Code plugin | `claude-code` | `SV_BASE_URL` (hooks) · `SECUREVECTOR_URL` (statusline) |
+| Cursor plugin | `cursor` | `SV_BASE_URL` · `SECUREVECTOR_URL` |
+| Codex plugin | `codex` | `SV_BASE_URL` · `SECUREVECTOR_URL` |
+| GitHub Copilot CLI plugin | `copilot-cli` | `SV_BASE_URL` · `SECUREVECTOR_URL` |
+| OpenClaw guard | `openclaw` | `SECUREVECTOR_URL` |
+
+A client may also forward a credential via `SECUREVECTOR_API_KEY` (OpenClaw sends
+it as `Authorization: Bearer`), but **the engine does not validate an inbound
+credential yet** (#182) — so today that does not gate access. (Plugin list
+mirrors `securevector-ai-threat-monitor/src/securevector/plugins/`.)
+
+## Tokens — which credential enables what
+
+Two distinct, **outbound** engine credentials (engine → SecureVector cloud), plus
+the inbound story:
+
+| Capability | Direction | Credential | Notes |
 |---|---|---|---|
-| LangChain / LangGraph / CrewAI SDK | `langchain` / `langgraph` / `crewai` | `SECUREVECTOR_SDK_APP_URL` (+ `SECUREVECTOR_SDK_MODE`) | `SECUREVECTOR_API_KEY` |
-| Claude Code plugin | `claude-code` | `SV_BASE_URL` (hooks) · `SECUREVECTOR_URL` (statusline) | `SECUREVECTOR_API_KEY` |
-| Cursor plugin | `cursor` | `SV_BASE_URL` · `SECUREVECTOR_URL` | `SECUREVECTOR_API_KEY` |
-| Codex plugin | `codex` | `SV_BASE_URL` · `SECUREVECTOR_URL` | `SECUREVECTOR_API_KEY` |
-| GitHub Copilot CLI plugin | `copilot-cli` | `SV_BASE_URL` · `SECUREVECTOR_URL` | `SECUREVECTOR_API_KEY` |
-| OpenClaw guard | `openclaw` | `SECUREVECTOR_URL` | `SECUREVECTOR_API_KEY` |
+| **Remote analyze** (client → engine) | inbound | *(none today)* | No per-caller auth in the engine yet → protect with Cloud Run IAM (`allow_unauthenticated = false`). App-layer auth = #182. |
+| **Personal cloud mode** (enhanced detection) | outbound | `securevector_api_key` (`svpk_`/legacy) → `SECUREVECTOR_API_KEY` | Engine presents it to the cloud as `X-Api-Key` (`cloud_sync.py`). No policy sync. |
+| **Forward to fleet** (org visibility) | outbound | `cloud_connect_token` (`svet_*`) → `SECUREVECTOR_ENROLL_TOKEN` | Org enrollment. Needs the image entrypoint to run `securevector-app enroll`. |
+| **Sync policies to local** (signed bundles) | outbound→in | `cloud_connect_token` (`svet_*` **only**) | `svpk_`/legacy/none ⇒ Policy Sync OFF — no partial mode (`device_admin.py`). |
 
-(Plugin list mirrors `securevector-ai-threat-monitor/src/securevector/plugins/`.)
-
-## Access & auth
-
-The SecureVector engine is single-user by origin. The application-layer
-credential is an **API key / minted token** (`securevector_api_key`): a plain
-API key or a minted `svet_*` (org enrollment) / `svpk_*` (personal) token.
-Clients forward it via `SECUREVECTOR_API_KEY` as `Authorization: Bearer` — the
-**bearer token is optional** (it defaults to the api key). When
-`allow_unauthenticated = true`, Cloud Run serves the URL publicly over managed
-HTTPS and that credential is what gates access, so **set `securevector_api_key`
-for any internet-reachable deployment**.
-
-For stricter setups, set `allow_unauthenticated = false` and reach the service
-over Google IAM (`gcloud run services proxy` / IAP) instead of (or in addition
-to) the app-layer key. Server-side enforcement of the inbound key in the engine
-is tracked in [story #182](https://github.com/Secure-Vector/llm-security-engine/issues/182).
-
-> For production, consider sourcing `securevector_api_key` / `cloud_connect_token`
-> from Secret Manager rather than tfvars (roadmap; see open questions in the wiki).
+> For production, source `securevector_api_key` / `cloud_connect_token` from
+> Secret Manager rather than tfvars (roadmap; see wiki open questions).
 
 ## Persistence
 
-`enable_persistence = true` mounts a GCS bucket at `/data` so the tamper-evident
-audit hash-chain survives instance restarts. Note the gcsfuse/SQLite locking
-caveat for highly concurrent writes — a managed-DB option is a planned uplift.
-For a throwaway trial, set `enable_persistence = false` or
-`bucket_force_destroy = true`.
+`enable_persistence = true` mounts a GCS bucket for the tamper-evident audit
+hash-chain. The app has **no data-dir env override** — it writes to
+`$HOME/.local/share/securevector/threat-monitor` — so `persistence_mount_path`
+must equal that path in the published image (the image must run as a user whose
+`$HOME` maps there). Note the gcsfuse/SQLite locking caveat for highly concurrent
+writes — a managed-DB option is a planned uplift. For a throwaway trial, set
+`enable_persistence = false` or `bucket_force_destroy = true`.
 
 ## Cloud Connect (optional)
 
-Set `cloud_connect_token` to enroll this self-hosted node into the SecureVector
-managed fleet view — the OSS-self-host → paid Pro/Enterprise on-ramp. Leave it
-empty to stay fully self-hosted with no outbound enrollment.
+Set `cloud_connect_token` (an `svet_*` org enrollment token) to enroll this
+self-hosted node into the SecureVector managed fleet view and receive signed
+policy bundles — the OSS-self-host → paid Pro/Enterprise on-ramp. It is passed
+as `SECUREVECTOR_ENROLL_TOKEN`; the published image's entrypoint must run
+`securevector-app enroll` (then serve) for it to take effect. Leave empty to stay
+fully self-hosted with no outbound enrollment.
 
 ## Teardown
 
