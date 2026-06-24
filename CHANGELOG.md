@@ -7,6 +7,10 @@ release per `vX.Y.Z` git tag.
 ## [Unreleased]
 
 ### Added
+- **EU-region example** (`examples/eu-region/`) for data-residency deployments —
+  sets `region` to `europe-west1` (Belgium; any EU region works) and documents
+  that both resources (Cloud Run service + GCS persistence bucket) stay in the
+  chosen region. No root-module change — `region` already drives both.
 - Initial GCP Cloud Run module: deploys the SecureVector engine to the user's
   own Google Cloud project with managed HTTPS, scale-to-zero defaults, and a
   clean `terraform destroy`.
