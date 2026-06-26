@@ -142,7 +142,7 @@ variable "allow_unauthenticated" {
 }
 
 variable "ingress_token" {
-  description = "App-layer inbound credential. When set, the engine requires it on every request (sent as Authorization: Bearer <token> or X-Api-Key: <token>); /health stays open for probes. Header-capable clients (OpenClaw, curl) can pass it today; SDK/JS-hook client-side forwarding is still rolling out (#182). Empty = no app-layer gate (rely on Cloud Run IAM)."
+  description = "App-layer inbound credential. Enforced from engine v4.9.0+: when set, a v4.9.0+ engine requires it on every request (sent as Authorization: Bearer <token> or X-Api-Key: <token>); /health stays open for probes. Header-capable clients (OpenClaw, curl) can pass it today; SDK/JS-hook client-side forwarding is still rolling out (#182). On engines older than v4.9.0 the env var is set but NOT enforced — rely on network gating until you pin a v4.9.0+ image. Empty = no app-layer gate (rely on Cloud Run IAM)."
   type        = string
   default     = ""
   sensitive   = true
