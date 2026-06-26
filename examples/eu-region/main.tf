@@ -7,7 +7,9 @@
 # EU. Nothing in this module replicates data to another region.
 #
 # Data residency: the engine processes and stores agent/governance data only in
-# the GCP project and region you deploy into. SecureVector never receives it.
+# the GCP project and region you deploy into. SecureVector does not store it. (NOTE: with Cloud Mode on, the engine sends
+# prompt text to scan.securevector.io (US) for ML analysis — not stored, but it
+# leaves the region; leave Cloud Mode off for strict EU residency. See README.)
 # See the module README for the residency posture.
 #
 # Default region here is europe-west1 (Belgium); europe-west4 (Netherlands) and
@@ -54,6 +56,12 @@ module "securevector" {
   min_instances        = 0
   securevector_api_key = var.securevector_api_key
   bucket_force_destroy = true
+
+  # EU data residency: keep ALL prompt analysis local even with Cloud Mode on.
+  # The v4.8+ engine honors SV_DATA_RESIDENCY=eu (locks local-only analysis on;
+  # the toggle is enforced/locked and cloud /analyze is forced local). Harmless
+  # no-op on older engine images.
+  extra_env = { SV_DATA_RESIDENCY = "eu" }
 }
 
 output "dashboard_url" {
