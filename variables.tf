@@ -216,7 +216,13 @@ variable "enable_apis" {
 }
 
 variable "extra_env" {
-  description = "Additional environment variables to pass to the engine container (advanced / forward-compat with future server-mode flags)."
+  description = "Additional environment variables to pass to the engine container (advanced / forward-compat with future server-mode flags). NON-SENSITIVE values only — these are plaintext in the revision spec. Put credentials in ingress_token / securevector_api_key / cloud_connect_token (stored in Secret Manager) or reference them via existing_secret_ids."
+  type        = map(string)
+  default     = {}
+}
+
+variable "existing_secret_ids" {
+  description = "Pre-created Secret Manager secrets for sensitive engine env vars, keyed by ENV VAR NAME (e.g. SECUREVECTOR_INGRESS_TOKEN) -> a secret id (short name in the same project, or projects/*/secrets/*). Entries here take precedence over ingress_token / securevector_api_key / cloud_connect_token and keep the secret value out of Terraform state entirely (the module never sees it; version `latest` is used). You must grant the runtime service account roles/secretmanager.secretAccessor on these secrets yourself."
   type        = map(string)
   default     = {}
 }
