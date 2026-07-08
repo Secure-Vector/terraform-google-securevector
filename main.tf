@@ -25,23 +25,58 @@ locals {
   #   SECUREVECTOR_ENROLL_TOKEN — svet_* org enrollment token. Consumed by the
   #                             `securevector-app enroll` subcommand, so the IMAGE
   #                             ENTRYPOINT must enroll before serving (see README).
+  # Credentials are NEVER inlined as plaintext env values (those are readable
+  # in the revision spec and in Terraform state). Each sensitive value becomes
+  # a Secret Manager secret referenced through env `value_source`
+  # (secret_key_ref); Cloud Run resolves it at instance start. To keep a value
+  # out of Terraform state entirely, pre-create the secret yourself and pass
+  # its id via existing_secret_ids instead of the variable.
+  #
+  #   SECUREVECTOR_INGRESS_TOKEN — INBOUND gate (Authorization: Bearer or
+  #                             X-Api-Key on every request; /health stays open).
+  #   SECUREVECTOR_API_KEY    — OUTBOUND cloud key (personal cloud mode).
+  #   SECUREVECTOR_ENROLL_TOKEN — svet_* org enrollment (entrypoint enrolls).
+  secret_env_all = {
+    SECUREVECTOR_INGRESS_TOKEN = var.ingress_token
+    SECUREVECTOR_API_KEY       = var.securevector_api_key
+    SECUREVECTOR_ENROLL_TOKEN  = var.cloud_connect_token
+  }
+
+  # for_each cannot iterate sensitive-derived collections, so the NAME set is
+  # explicitly unwrapped (only the set-or-not bit leaks, never the value).
+  secret_env_names = [
+    for k, v in local.secret_env_all : k if nonsensitive(v != "")
+  ]
+
+  # Caller-supplied secret ids win over the corresponding variable.
+  managed_secret_names = [
+    for k in local.secret_env_names : k if !contains(keys(var.existing_secret_ids), k)
+  ]
+
+  # env name -> secret reference consumed by the env value_source blocks.
+  container_secret_refs = merge(
+    { for k in local.managed_secret_names : k => google_secret_manager_secret.secret_env[k].secret_id },
+    var.existing_secret_ids,
+  )
+
+  # Non-sensitive engine env stays as plain env values.
   container_env = merge(
-    # INBOUND gate — when set, the engine requires this credential on every
-    # request (Authorization: Bearer or X-Api-Key); /health stays open for
-    # probes. Validated by the ingress_auth middleware in threat-monitor.
-    var.ingress_token != "" ? { SECUREVECTOR_INGRESS_TOKEN = var.ingress_token } : {},
-    # OUTBOUND cloud key (personal cloud mode; cloud_sync sends as X-Api-Key).
-    var.securevector_api_key != "" ? { SECUREVECTOR_API_KEY = var.securevector_api_key } : {},
     var.securevector_api_url != "" ? { SECUREVECTOR_API_URL = var.securevector_api_url } : {},
-    # svet_* org enrollment (entrypoint runs `enroll` before serving).
-    var.cloud_connect_token != "" ? { SECUREVECTOR_ENROLL_TOKEN = var.cloud_connect_token } : {},
     var.extra_env,
   )
+
+  # Cloud Run resolves secret refs with the RUNTIME service account.
+  runtime_sa_email = var.service_account_email != "" ? var.service_account_email : "${data.google_project.this.number}-compute@developer.gserviceaccount.com"
 
   required_apis = toset(concat(
     ["run.googleapis.com"],
     var.enable_persistence ? ["storage.googleapis.com"] : [],
+    length(local.secret_env_names) + length(var.existing_secret_ids) > 0 ? ["secretmanager.googleapis.com"] : [],
   ))
+}
+
+data "google_project" "this" {
+  project_id = var.project_id
 }
 
 ###############################################################################
@@ -72,6 +107,43 @@ resource "google_storage_bucket" "data" {
   labels                      = var.labels
 
   depends_on = [google_project_service.required]
+}
+
+###############################################################################
+# Secrets — sensitive engine env lives in Secret Manager, not plaintext env
+###############################################################################
+
+resource "google_secret_manager_secret" "secret_env" {
+  for_each = toset(local.managed_secret_names)
+
+  project   = var.project_id
+  secret_id = "${var.name}-${each.key}"
+  labels    = var.labels
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_secret_manager_secret_version" "secret_env" {
+  for_each = toset(local.managed_secret_names)
+
+  secret      = google_secret_manager_secret.secret_env[each.key].id
+  secret_data = local.secret_env_all[each.key]
+}
+
+# The runtime service account resolves secret refs at instance start. Access is
+# granted per-secret (least privilege) for module-created secrets; for
+# existing_secret_ids the caller grants roles/secretmanager.secretAccessor.
+resource "google_secret_manager_secret_iam_member" "runtime_access" {
+  for_each = toset(local.managed_secret_names)
+
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.secret_env[each.key].secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${local.runtime_sa_email}"
 }
 
 ###############################################################################
@@ -146,6 +218,21 @@ resource "google_cloud_run_v2_service" "default" {
         }
       }
 
+      # Sensitive env resolves from Secret Manager at instance start — the
+      # value never appears in the revision spec.
+      dynamic "env" {
+        for_each = local.container_secret_refs
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+
       # Persistence mounts at the engine's data dir. The app has NO data-dir env
       # override — it uses $HOME/.local/share/securevector/threat-monitor — so
       # persistence_mount_path MUST equal that path in the published image (the
@@ -171,7 +258,11 @@ resource "google_cloud_run_v2_service" "default" {
     }
   }
 
-  depends_on = [google_project_service.required]
+  depends_on = [
+    google_project_service.required,
+    google_secret_manager_secret_version.secret_env,
+    google_secret_manager_secret_iam_member.runtime_access,
+  ]
 }
 
 ###############################################################################

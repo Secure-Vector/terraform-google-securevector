@@ -6,6 +6,20 @@ release per `vX.Y.Z` git tag.
 
 ## [Unreleased]
 
+### Security
+- **Credentials moved out of plaintext container env**: `ingress_token`,
+  `securevector_api_key`, and `cloud_connect_token` are now stored as Secret
+  Manager secrets and injected via env `value_source` (`secret_key_ref`)
+  instead of plaintext env values readable in the Cloud Run revision spec. The
+  runtime service account gets per-secret `roles/secretmanager.secretAccessor`
+  (least privilege); `secretmanager.googleapis.com` is auto-enabled when
+  needed.
+- New `existing_secret_ids` input: reference pre-created Secret Manager
+  secrets (keyed by env var name) so credential values never transit Terraform
+  or its state at all.
+- README: documented state-hygiene guidance; `extra_env` documented as
+  non-sensitive-only.
+
 ### Added
 - **EU-region example** (`examples/eu-region/`) for data-residency deployments —
   sets `region` to `europe-west1` (Belgium; any EU region works) and documents
